@@ -1,22 +1,19 @@
 import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
 import os
 import requests
 import re
-from dataclasses import dataclass
-
-DATA_DIRECTORY_NAME = "hmd_data"
-
-@dataclass # Used solely for making navigation in the imported data and its history easier
-class MortalityDataclass:
-    data: pd.DataFrame
-    missing_values: dict[str, int]
-    year_interval: dict[str, int]
+from typing import Optional
+from config import plot_configuration
+from core.data_structures import MortalityData
 
 class CountryData:
     def __init__(self, country_hmd_code: str) -> None:
-        self.mx = None
-        self.ex = None
-        self.dx = None
+        self.mx: Optional[MortalityData] = None
+        self.ex: Optional[MortalityData] = None
+        self.dx: Optional[MortalityData] = None
+        self.data_directory = "hmd_data"
 
         self.country_code = country_hmd_code
 
@@ -36,7 +33,7 @@ class CountryData:
         maximum_age, optional
             Maximum age included in the dataset, by default 90.
         """
-        path = os.path.join(DATA_DIRECTORY_NAME, self.country_code)
+        path = os.path.join(self.data_directory, self.country_code)
         os.makedirs(path, exist_ok=True)
         files = {
             "mx": "Mx_1x1.txt",
@@ -51,15 +48,15 @@ class CountryData:
             download_error = False
             path_to_file = os.path.join(path, file)
             if not os.path.exists(path_to_file):
-                self.check_credentials_present()
+                self._check_credentials_present()
                 if session is None:
-                    session = self.initialize_session()
-                download_error = self.download_data(file, path_to_file, session)
+                    session = self._initialize_session()
+                download_error = self._download_data(file, path_to_file, session)
 
             if download_error:
                 failed_downloads.append(file)
             else:
-                setattr(self, key, self.minor_preprocessing(path_to_file, starting_year, ending_year, maximum_age))
+                setattr(self, key, self._minor_preprocessing(path_to_file, starting_year, ending_year, maximum_age))
 
         if len(os.listdir(path)) == 0:
             os.rmdir(path)
@@ -72,7 +69,7 @@ class CountryData:
                 print(f"{self.country_code:<10} {failed_file:>20}")
 
 
-    def check_credentials_present(self) -> None:
+    def _check_credentials_present(self) -> None:
         """Checks if credentials are present in the .env file.
         """
         if not self.password or not self.username:
@@ -85,7 +82,7 @@ class CountryData:
             raise ValueError(missing_credentials_error)
 
 
-    def initialize_session(self) -> requests.Session:
+    def _initialize_session(self) -> requests.Session:
         """Initializes the session with the Human Mortality Database.
 
         Returns
@@ -113,7 +110,7 @@ class CountryData:
         return session
 
 
-    def download_data(self, file: str, path_to_file: str, session: requests.Session) -> bool:
+    def _download_data(self, file: str, path_to_file: str, session: requests.Session) -> bool:
         """Downloads a specific HMD file.
 
         Returns
@@ -131,12 +128,12 @@ class CountryData:
         return download_error
 
 
-    def minor_preprocessing(self, full_path: str, starting_year: int, ending_year: int, maximum_age: int) -> MortalityDataclass:
+    def _minor_preprocessing(self, full_path: str, starting_year: int, ending_year: int, maximum_age: int) -> MortalityData:
         """Minimal preprocessing of the downloaded HMD files.
 
         Returns
         -------
-            MortalityDataclass instance holding all of the data and the additional information together in one place
+            MortalityData instance holding all of the data and the additional information together in one place
         """
         data = pd.read_csv(full_path, sep=r"\s+", header=1, na_values=".")
         data["Age"] = data["Age"].astype(str).str.replace("+", "", regex=False).astype(int) # We need to remove the "+" from 110+ to be able to use filters
@@ -146,21 +143,56 @@ class CountryData:
                                     values=["Female", "Male", "Total"]
         ).interpolate(method="linear", axis=0, limit_direction="both") 
         interpolated_data = pivoted_values.stack(level="Age").reset_index()
-        numerical_columns = ["Female", "Male", "Total"]
-        interpolated_data[numerical_columns] = interpolated_data[numerical_columns].replace(0, 1e-9) # Adding a small epsilon to the zeros in the dataset so that we can use logarithms
-        
-        # Under we add additional historic information of the dataset in order to make the process more transparent
-        total_values = data.size
-        missing_values = int(data.isna().sum().sum())
-        percentage_missing = round(missing_values / total_values, 3)
-        data_missing_values = {
-            "total": data.size,
-            "missing_pre_interpolation": missing_values, # Total amount of empty values in the entire matrix/dataframe
-            "percent": percentage_missing
-        }
-        year_interval = {
-            "start": starting_year, 
-            "end": ending_year
-        }
 
-        return MortalityDataclass(interpolated_data, data_missing_values, year_interval)
+        return MortalityData(interpolated_data)
+    
+        # TODO: MOVE INTO DATA STRUCTURES - MORTALITYDATA (PROBABLY)
+    def plot_age_profiles(self, year_step: int = 10, legend_size: float = 10, value_column: str = "Total") -> plt.Axes:
+        """Plot the development of mx based on Age and Year.
+
+        Parameters
+        ----------
+        year_step, optional
+            Size of individuals steps in the sequence between the first and the last year, by default 10.
+        legend_size, optional
+            Legend size multiplicator, the higher the number, the bigger the legend, by default 10.
+        value_column, optional
+            Column of values we use for visualization, by default "Total".
+
+        Returns
+        -------
+            Matplotlib axis object containing the plot.
+
+        Raises
+        ------
+        ValueError
+            Empty MortalityData.mx object.
+        """
+        if self.mx is None:
+            raise ValueError("The mx data is not loaded.")
+        
+        year_range = np.arange(self.mx.year_interval["start"], self.mx.year_interval["end"] + 1, year_step)
+        plotting_dataframe = (
+            self.mx.data.loc[
+                self.mx.data.Year.isin(year_range), 
+                ["Age", "Year", value_column]
+            ]
+            .pivot(index="Age", columns="Year", values=value_column)
+        )
+
+        with plt.style.context("seaborn-v0_8"):
+            y_lower_bound, y_upper_bound = (plotting_dataframe.max().max() * -0.02, plotting_dataframe.max().max() * 0.5)
+            x_lower_bound, x_upper_bound = (max(60, plotting_dataframe.index.min()), plotting_dataframe.index.max())
+            ax = plotting_dataframe.plot(cmap="magma")
+
+            limit_age = 90
+            ax.axvline(limit_age, color="black", linestyle="dashed", linewidth=1)
+
+            ax.set_xlim([x_lower_bound, x_upper_bound])
+            ax.set_ylim([y_lower_bound, y_upper_bound])
+            ax.set_ylabel(f"Death rates ({value_column})")
+            ax.set_title("Age profiles throughout the years")
+            plot_configuration(ax, legend_location="upper left", legend_size=legend_size)
+            return ax
+
+
