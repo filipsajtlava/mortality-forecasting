@@ -6,14 +6,14 @@ from core.base_model import Model
 
 class LeeCarterModel(Model):
     def __init__(self, mortality_dataclass: MortalityData, value_column: str) -> None:
-        """_summary_
+        """Initialize the Lee-Carter model with mortality data and target variable.
 
         Parameters
         ----------
         mortality_dataclass
-            _description_
+            Dataclass containing the HMD mortality data.
         value_column
-            _description_
+            The name of the column in the dataset for modeling (Male, Female or Total).
         """
         super().__init__(mortality_dataclass, value_column)
         self.ax: Optional[np.array] = None
@@ -59,7 +59,6 @@ class LeeCarterModel(Model):
             
             log_mx_matrix = self.ax[:, np.newaxis] + self.bx[:, np.newaxis] * kt_pred
             
-            last_year = self.mortality_dataclass.year_interval["end"]
             return xr.DataArray(
                 np.exp(log_mx_matrix),
                 coords=[ages, pred_years],
@@ -79,5 +78,12 @@ class LeeCarterModel(Model):
                 name="MortalityRates"
             )
         
-    
-
+    def predict_historical(self):
+        log_mx_matrix = self.ax[:, np.newaxis] + self.bx[:, np.newaxis] * self.kt
+        
+        return xr.DataArray(
+            np.exp(log_mx_matrix),
+            coords=[self.wide_matrix.to_pandas().index.to_numpy(), self.wide_matrix.to_pandas().columns.to_numpy()],
+            dims=["Age", "Year"],
+            name="MortalityRates"
+        )

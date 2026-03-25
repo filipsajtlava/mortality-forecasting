@@ -5,21 +5,21 @@ from core.base_model import Model
 
 class MortalityEvaluator:
     def __init__(self, model_fitted: Model, testing_data: MortalityData, simulations: int):
-        """_summary_
+        """Initialize the evaluator to compare model projections against testing data.
 
         Parameters
         ----------
         model_fitted
-            _description_
+            The fitted mortality model instance.
         testing_data
-            _description_
-        simulations
-            _description_
+            The observed data used for validation.
+        simulations 
+            Number of stochastic trajectories to generate.
 
         Raises
         ------
         ValueError
-            _description_
+            If the model has not been fitted or is missing required parameters.
         """
         self.model = model_fitted
         self.testing_data = testing_data
@@ -39,21 +39,22 @@ class MortalityEvaluator:
         return self.model.predict(steps=years_to_predict, simulations=self.simulations)
 
     def calculate_residuals(self, method: str = "mean") -> xr.DataArray:
-        """_summary_
+        """Compute the difference between observed and predicted mortality values.
 
         Parameters
         ----------
         method, optional
-            _description_, by default "mean"
+            Aggregation method for simulations ("mean" or "median"), by default "mean".
 
         Returns
         -------
-            _description_
+        xr.DataArray
+            The calculated residuals (Observed - Predicted).
 
         Raises
         ------
         ValueError
-            _description_
+            If the specified method is not in ['mean', 'median'].
         """
         possible_methods = ["mean", "median"]
     

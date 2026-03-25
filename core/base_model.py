@@ -1,4 +1,3 @@
-import pandas as pd
 import xarray as xr
 from abc import ABC, abstractmethod
 from core.data_structures import MortalityData
