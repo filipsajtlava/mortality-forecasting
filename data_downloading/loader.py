@@ -6,6 +6,7 @@ import requests
 import re
 from typing import Optional
 from config import plot_configuration
+from data_downloading.countries_available import HMD_COUNTRIES
 from core.data_structures import MortalityData
 
 class CountryData:
@@ -16,6 +17,9 @@ class CountryData:
         self.data_directory = "hmd_data"
 
         self.country_code = country_hmd_code
+        if self.country_code not in HMD_COUNTRIES:
+            raise ValueError("The selected country code is not available.")
+        self.country_name = HMD_COUNTRIES[self.country_code]
 
         self.username = os.getenv("HMD_USERNAME")
         self.password = os.getenv("HMD_PASSWORD")
@@ -138,15 +142,17 @@ class CountryData:
         data = pd.read_csv(full_path, sep=r"\s+", header=1, na_values=".")
         data["Age"] = data["Age"].astype(str).str.replace("+", "", regex=False).astype(int) # We need to remove the "+" from 110+ to be able to use filters
         data = data.query(f"Year >= {starting_year} and Year <= {ending_year} and Age <= {maximum_age}")
-        pivoted_values = data.pivot(index="Year", 
-                                    columns="Age", 
-                                    values=["Female", "Male", "Total"]
+        pivoted_values = data.pivot(
+            index="Year", 
+            columns="Age", 
+            values=["Female", "Male", "Total"]
         ).interpolate(method="linear", axis=0, limit_direction="both") 
         interpolated_data = pivoted_values.stack(level="Age").reset_index()
 
         return MortalityData(interpolated_data)
     
-        # TODO: MOVE INTO DATA STRUCTURES - MORTALITYDATA (PROBABLY)
+
+    # TODO: MOVE INTO DATA STRUCTURES - MORTALITYDATA (PROBABLY)
     def plot_age_profiles(self, year_step: int = 10, legend_size: float = 10, value_column: str = "Total") -> plt.Axes:
         """Plot the development of mx based on Age and Year.
 
