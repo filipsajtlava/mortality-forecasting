@@ -3,6 +3,11 @@ import numpy as np
 from core.data_structures import MortalityData
 from core.base_model import Model
 
+# TODO: I was thinking about implementing an approach that only need you to select the mean/median
+# for the MC aggregation, and after that, all of the 3 errors would automatically calculate and 
+# save into the instance. To access them you would use the dot notation, e.g. .MASE
+# This way you could have .MASE.ind - to get the individual MASE rates for every age instead
+# of having to get the total mase yourself by taking the mean.
 
 class MortalityEvaluator:
     def __init__(self, model_fitted: Model, testing_data: MortalityData, simulations: int):
@@ -73,19 +78,41 @@ class MortalityEvaluator:
         return float(np.sqrt(squared_errors.mean()))    
 
 
-    def _calculate_MASE(self) -> float:
+    def _calculate_MASE(self) -> xr.DataArray:
         """Calculates the MASE of aggregated predictions and the test set
+        for individual ages
 
         Returns
         -------
             MASE error.
         """
-        abs_error = np.abs(self.testing_data.get_pivoted_data(self.value_column) - self.agg_predictions)
+        abs_mean_error_preds = np.abs(
+            self.testing_data.get_pivoted_data(self.value_column) - \
+            self.agg_predictions
+        ).mean(dim="Year")
         training_set = self.model.wide_matrix
-    
-        return abs_error
-        return float(abs_error.mean() / np.abs(training_set.diff(dim="Year")).mean())
+        training_diff_error = np.abs(training_set.diff(dim="Year")).mean(dim="Year")
+        # TODO: is it correct for it to return an xarray? wouldn't a numpy array be better?
+        return abs_mean_error_preds / training_diff_error
 
+    
+    def _calculate_MSEr(self) -> xr.DataArray:
+        """Calculates the MSEr of aggregated predictions and the test set
+        for individual ages (MASE without the absolute value)
+
+        Returns
+        -------
+            MSEr error.
+        """
+        mean_error_preds = (
+            self.testing_data.get_pivoted_data(self.value_column) - \
+            self.agg_predictions
+        ).mean(dim="Year")
+        training_set = self.model.wide_matrix
+        training_diff_error = np.abs(training_set.diff(dim="Year")).mean(dim="Year")
+        # TODO: is it correct for it to return an xarray? wouldn't a numpy array be better?
+        return mean_error_preds / training_diff_error
+    
 
     def calculate_error(
             self, 
@@ -114,7 +141,8 @@ class MortalityEvaluator:
         error_methods = {
             "MAE": self._calculate_MAE,
             "RMSE": self._calculate_RMSE,
-            "MASE": self._calculate_MASE
+            "MASE": self._calculate_MASE,
+            "MSEr": self._calculate_MSEr
         }
 
         if aggregate in aggregate_methods:
@@ -126,6 +154,7 @@ class MortalityEvaluator:
             error_message =  f"Selected method '{aggregate}' isn't allowed. Choose one from {aggregate_methods}"
             raise ValueError(error_message)
 
+        # TODO: why exactly is this here? 
         if start_year is not None:
             self.agg_predictions = self.agg_predictions.sel(Year=slice(start_year, None))
 

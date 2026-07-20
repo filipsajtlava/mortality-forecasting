@@ -8,7 +8,13 @@ class LeeCarterModel(Model):
     # TODO: add simulations to the __init__
     # TODO: add .x_ to parameters estimated by the model to comply with sklearn standards
     # TODO: completely redesign the model utilizing the sklearn's BaseEstimator
-    def __init__(self, mortality_dataclass: MortalityData, value_column: str) -> None:
+    def __init__(
+            self, 
+            mortality_dataclass: MortalityData, 
+            value_column: str,
+            jump_off_fix: bool = False,
+            seed: Optional[int] = None
+        ) -> None:
         """Initialize the Lee-Carter model with mortality data and target variable.
 
         Parameters
@@ -23,6 +29,9 @@ class LeeCarterModel(Model):
         self.bx: Optional[np.array] = None
         self.kt: Optional[np.array] = None
         self.explained_variance: Optional[float] = None
+        
+        self.jump_off_fix = jump_off_fix
+        self.seed = seed
 
         self.overlap_step = 0 if self.mortality_dataclass.overlap else 1
 
@@ -33,9 +42,12 @@ class LeeCarterModel(Model):
     
         self.wide_matrix = self.wide_matrix.where(self.wide_matrix != 0, 1e-9)
         log_values = np.log(self.wide_matrix)
-        ax_da = log_values.mean(axis=1)
-        self.ax = ax_da.values
-        centered_wide_matrix = log_values - ax_da
+        if self.jump_off_fix:
+            ax_estimate_da = log_values.sel(Year=self.mortality_dataclass.year_interval["end"])
+        else:
+            ax_estimate_da = log_values.mean(axis=1)
+        self.ax = ax_estimate_da.values
+        centered_wide_matrix = log_values - ax_estimate_da
 
         U, s, V = np.linalg.svd(centered_wide_matrix.values, full_matrices=False)
         
@@ -52,7 +64,8 @@ class LeeCarterModel(Model):
     def predict_kt(self, steps: int, simulations: int) -> xr.DataArray:
         """Simulate and predict the stochastic walk of the kt parameter.
         """
-        innovations = np.random.normal(
+        rng = np.random.default_rng(self.seed)
+        innovations = rng.normal(
             self.drift, self.std_of_errors, size=(steps, simulations)
         )
         innovations = np.insert(innovations, 0, 0, axis=0)

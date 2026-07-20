@@ -6,6 +6,10 @@ class Model(ABC):
     def __init__(self, mortality_dataclass: MortalityData, value_column: str) -> None:
         self.mortality_dataclass = mortality_dataclass
         self.value_column = value_column
+        #TODO: I think the wide_matrix is unecessary and the models should do it themselves?
+        # but then again, that would mean that each model would have to have the .get_pivoted_data
+        # in it. It like doesn't fit into the model class because it doesn't really have to do
+        # anything with the model itself.
         self.wide_matrix = self.mortality_dataclass.get_pivoted_data(self.value_column)
 
     @abstractmethod
