@@ -1,6 +1,6 @@
 import xarray as xr
 import numpy as np
-from core.data_structures import MortalityData
+from core._data_structures import DemographicGrid
 from core.base_model import Model
 
 # TODO: I was thinking about implementing an approach that only need you to select the mean/median
@@ -10,7 +10,7 @@ from core.base_model import Model
 # of having to get the total mase yourself by taking the mean.
 
 class MortalityEvaluator:
-    def __init__(self, model_fitted: Model, testing_data: MortalityData, simulations: int):
+    def __init__(self, model_fitted: Model, testing_data: DemographicGrid, simulations: int):
         """Initialize the evaluator to compare model projections against testing data.
 
         Parameters

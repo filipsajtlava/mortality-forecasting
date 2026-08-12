@@ -47,7 +47,7 @@ class DataFetcherHMD:
         if fetch_error_code == 200 or fetch_error_code is None:
             comparison_source_path = cache_codes_path
         else:
-            error_msg = ("Defaulting to a fallback list")
+            error_msg = "WARNING: Defaulting to a fallback country codes list"
             print(error_msg)
             comparison_source_path = Path(__file__).parent / STALE_FALLBACK_COUNTRY_AVAILABLE
             
@@ -87,12 +87,12 @@ class DataFetcherHMD:
         """Loads cached datasets or downloads data files for the stored country code from the HMD.
 
         Checks for existing, non-expired cached files for each configured data type
-        (e.g. mx, ex, dx) and downloads any that are missing or stale, authenticating
+        (e.g. mxt, ext, dxt) and downloads any that are missing or stale, authenticating
         a session if credentials are required.
 
         Returns
         -------
-            Mapping of data type keys (e.g. "mx", "ex", "dx") to the local file paths
+            Mapping of data type keys (e.g. "M", "E", "D") to the local file paths
             that were successfully retrieved or already cached.
         """
         country_data_path = self._data_parent_directory_path / self._country_code
@@ -111,6 +111,10 @@ class DataFetcherHMD:
                 download_error = self._download_data(file, path_to_file)
                 if download_error:
                     failed_downloads.append(file)
+                    if path_to_file.exists():
+                        error_msg = f"WARNING: refresh failed for {file}, defaulting to cache." 
+                        print(error_msg)
+                        successfuly_loaded[key] = path_to_file
                 else:
                     successfuly_loaded[key] = path_to_file
             else:
@@ -183,8 +187,7 @@ class DataFetcherHMD:
         content_type = data_response.headers.get("Content-type", "")
         download_error = "text/html" in content_type or data_response.status_code != 200
         if not download_error:
-            with open(path_to_file, mode="w", encoding="UTF-8") as f:
-                f.write(data_response.text)
+            path_to_file.write_text(data_response.text, encoding="utf-8")
 
         return download_error
 

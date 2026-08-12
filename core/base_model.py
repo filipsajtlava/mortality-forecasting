@@ -1,22 +1,34 @@
-import xarray as xr
 from abc import ABC, abstractmethod
-from core.data_structures import MortalityData
+from typing import Self
+import xarray as xr
+import numpy as np
+from data_downloading.loader import MortalityDataset
 
 class Model(ABC):
-    def __init__(self, mortality_dataclass: MortalityData, value_column: str) -> None:
-        self.mortality_dataclass = mortality_dataclass
-        self.value_column = value_column
-        #TODO: I think the wide_matrix is unecessary and the models should do it themselves?
-        # but then again, that would mean that each model would have to have the .get_pivoted_data
-        # in it. It like doesn't fit into the model class because it doesn't really have to do
-        # anything with the model itself.
-        self.wide_matrix = self.mortality_dataclass.get_pivoted_data(self.value_column)
+    def __init__(
+            self,
+            lee_miller_fix: bool = False,
+            seed: int | np.random.Generator | None = None
+        ) -> None:
+        self.lee_miller_fix = lee_miller_fix
+        self.seed = seed
+
 
     @abstractmethod
-    def fit(self):
-        """Fit the model using the specified method.
+    def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
+        """Fit the model on the mortality data with a specified sex,
+        using an individually set up method.
+
+        Parameters
+        ----------
+        mortality_data
+            Instance of the MortalityDataset, with loaded data depending on
+            the model architecture, similar to 'x' in sklearn.
+        sex
+            The chosen sex used for fitting the model, similar to 'y' in sklearn.
         """
         pass
+
 
     @abstractmethod
     def predict(self, steps: int, simulations: int = 1) -> xr.DataArray:
@@ -31,6 +43,65 @@ class Model(ABC):
 
         Returns
         -------
-            Data forecast (either a matrix or a tensor depending on the number of simulations chosen).
+            Data forecast (either a matrix or a tensor,
+            depending on the number of simulations chosen).
         """
         pass
+
+
+    def _normalize_seed(self) -> np.random.Generator:
+        """Normalizes the entered seed into a single np.random.Generator instance
+
+        Returns
+        -------
+        np.random.Generator
+            An active NumPy random number generator instance.
+        """
+        if isinstance(self.seed, np.random.Generator):
+            return self.seed
+        return np.random.default_rng(self.seed)
+    
+
+    def _validate_dataset(
+            self, 
+            mortality_data: MortalityDataset, 
+            required_grids: list[str]
+        ) -> None:
+        """Check if the specified datasets are present in the MortalityDataset
+        instance (models themselves dictate what they want to check). 
+        
+        If there is more than one required grid to be checked, this method also
+        validates that every grid contains the exact same timespan.
+
+        Parameters
+        ----------
+        mortality_data
+            Instance of the MortalityDataset.
+        required_grids
+            The model specified grids this method has to check.
+        """
+        for grid in required_grids:
+            selected_grid = getattr(mortality_data, grid, None)
+            if (
+                selected_grid is None or 
+                selected_grid.data is None or 
+                selected_grid.data.empty
+            ):
+                raise ValueError(
+                    f"The necessary grid '{grid}' for this model is " \
+                    f"not available in the mortality data."
+                )
+
+        if len(required_grids) > 1:
+            reference_year_interval = getattr(
+                mortality_data, 
+                required_grids[0]
+            ).year_interval
+
+            for grid in required_grids:
+                if reference_year_interval != getattr(mortality_data, grid).year_interval:
+                    raise ValueError(
+                        f"Year interval mismatch between grid " \
+                        f"'{required_grids[0]}' and grid '{grid}'"
+                    )
+        

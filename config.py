@@ -5,7 +5,7 @@ CACHED_TTL_COUNTRY_CODE_DAYS = 360
 CACHED_TTL_COUNTRY_DATA_DAYS = 360
 
 FILE_SELECTION_COUNTRY_DATA = {
-    "mx": "Mx_1x1.txt",
-    "ex": "Exposures_1x1.txt",
-    "dx": "Deaths_1x1.txt"
+    "M": "Mx_1x1.txt",
+    "E": "Exposures_1x1.txt",
+    "D": "Deaths_1x1.txt"
 }
