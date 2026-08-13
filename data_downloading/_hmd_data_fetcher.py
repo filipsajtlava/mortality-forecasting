@@ -99,7 +99,7 @@ class DataFetcherHMD:
         country_data_path.mkdir(exist_ok=True)
     
         failed_downloads = []
-        successfuly_loaded = {}
+        successfully_loaded = {}
         for key, file in FILE_SELECTION_COUNTRY_DATA.items():
             path_to_file = country_data_path / file
             
@@ -114,11 +114,11 @@ class DataFetcherHMD:
                     if path_to_file.exists():
                         error_msg = f"WARNING: refresh failed for {file}, defaulting to cache." 
                         print(error_msg)
-                        successfuly_loaded[key] = path_to_file
+                        successfully_loaded[key] = path_to_file
                 else:
-                    successfuly_loaded[key] = path_to_file
+                    successfully_loaded[key] = path_to_file
             else:
-                successfuly_loaded[key] = path_to_file
+                successfully_loaded[key] = path_to_file
         if not any(country_data_path.iterdir()):
             country_data_path.rmdir()
 
@@ -129,7 +129,7 @@ class DataFetcherHMD:
             for failed_file in failed_downloads:
                 print(f"{self._country_code:<10} {failed_file:>20}")
         
-        return successfuly_loaded
+        return successfully_loaded
 
 
     def _ensure_credentials_present(self) -> None:

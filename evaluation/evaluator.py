@@ -9,8 +9,15 @@ from core.base_model import Model
 # This way you could have .MASE.ind - to get the individual MASE rates for every age instead
 # of having to get the total mase yourself by taking the mean.
 
+# TODO: needs redesigning to compyl with the new DemographicGrids and MortalityDatasets 
+
 class MortalityEvaluator:
-    def __init__(self, model_fitted: Model, testing_data: DemographicGrid, simulations: int):
+    def __init__(
+            self, 
+            model_fitted: Model, 
+            testing_data: DemographicGrid, 
+            simulations: int
+        ):
         """Initialize the evaluator to compare model projections against testing data.
 
         Parameters

@@ -16,7 +16,7 @@ class Model(ABC):
 
     @abstractmethod
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
-        """Fit the model on the mortality data with a specified sex,
+        """Fit the model on the mortality data with a specified value column,
         using an individually set up method.
 
         Parameters
@@ -24,8 +24,9 @@ class Model(ABC):
         mortality_data
             Instance of the MortalityDataset, with loaded data depending on
             the model architecture, similar to 'x' in sklearn.
-        sex
-            The chosen sex used for fitting the model, similar to 'y' in sklearn.
+        value_column
+            The chosen value column used for fitting the model,
+            similar to 'y' in sklearn.
         """
         pass
 
