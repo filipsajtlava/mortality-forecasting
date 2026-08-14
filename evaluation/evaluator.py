@@ -1,6 +1,6 @@
 import xarray as xr
 import numpy as np
-from core._data_structures import DemographicGrid
+from data_downloading.datasets import DemographicGrid
 from core.base_model import Model
 
 # TODO: I was thinking about implementing an approach that only need you to select the mean/median
@@ -9,7 +9,7 @@ from core.base_model import Model
 # This way you could have .MASE.ind - to get the individual MASE rates for every age instead
 # of having to get the total mase yourself by taking the mean.
 
-# TODO: needs redesigning to compyl with the new DemographicGrids and MortalityDatasets 
+# TODO: needs redesigning to comply with the new DemographicGrids and MortalityDatasets 
 
 class MortalityEvaluator:
     def __init__(
@@ -45,7 +45,6 @@ class MortalityEvaluator:
 
         self.predicted_data = self._calculate_predictions()
 
-
     def _calculate_predictions(self) -> None:
         """Calculates the predictions for the period of the testing data using the fitted model.
         """
@@ -54,7 +53,6 @@ class MortalityEvaluator:
             self.model.mortality_dataclass.year_interval["end"]
         )
         return self.model.predict(steps=self.years_to_predict, simulations=self.simulations)
-
 
     def _calculate_MAE(self) -> float:
         """Calculates the MAE of aggregated predictions and the test set
@@ -69,7 +67,6 @@ class MortalityEvaluator:
         
         return float(abs_percent_errors.mean())
 
-
     def _calculate_RMSE(self) -> float:
         """Calculates the RMSE of aggregated predictions and the test set
 
@@ -83,7 +80,6 @@ class MortalityEvaluator:
         ) ** 2
 
         return float(np.sqrt(squared_errors.mean()))    
-
 
     def _calculate_MASE(self) -> xr.DataArray:
         """Calculates the MASE of aggregated predictions and the test set
@@ -101,7 +97,6 @@ class MortalityEvaluator:
         training_diff_error = np.abs(training_set.diff(dim="Year")).mean(dim="Year")
         # TODO: is it correct for it to return an xarray? wouldn't a numpy array be better?
         return abs_mean_error_preds / training_diff_error
-
     
     def _calculate_MSEr(self) -> xr.DataArray:
         """Calculates the MSEr of aggregated predictions and the test set
@@ -120,7 +115,6 @@ class MortalityEvaluator:
         # TODO: is it correct for it to return an xarray? wouldn't a numpy array be better?
         return mean_error_preds / training_diff_error
     
-
     def calculate_error(
             self, 
             aggregate: str = "mean", 

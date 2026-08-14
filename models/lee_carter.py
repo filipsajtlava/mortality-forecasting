@@ -1,7 +1,9 @@
 from typing import Self
+
 import numpy as np
 import xarray as xr
-from data_downloading.loader import MortalityDataset
+
+from data_downloading.datasets import MortalityDataset
 from core.base_model import Model
 
 class LeeCarterModel(Model):
@@ -12,7 +14,6 @@ class LeeCarterModel(Model):
             seed: int | np.random.Generator | None = None
         ) -> None:
         super().__init__(lee_miller_fix=lee_miller_fix, seed=seed)
-
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
         """Fit the Lee-Carter model using SVD.
@@ -44,7 +45,6 @@ class LeeCarterModel(Model):
         self.drift_ = (self.kt_[-1] - self.kt_[0]) / (len(self.kt_) - 1)
         self.std_of_errors_ = np.std(np.diff(self.kt_) - self.drift_)
         return self
-    
 
     def forecast_kt(self, steps: int, simulations: int) -> xr.DataArray:
         """Simulate and forecast the stochastic walk of the kt parameter.
@@ -65,7 +65,6 @@ class LeeCarterModel(Model):
             dims=["Year", "Simulation"],
             name="kt_forecast"
         )
-
     
     def forecast_kt_analytical(self, steps: int) -> xr.DataArray:
         """Forecast the values of the kt parameter analytically.
@@ -83,7 +82,6 @@ class LeeCarterModel(Model):
             dims=["Year"],
             name="kt_forecast_analytical"
         )
-
 
     def predict(self, steps: int, simulations: int = 1, stochastic: bool = True) -> xr.DataArray:
         """Predict the future mortality values.
@@ -106,7 +104,6 @@ class LeeCarterModel(Model):
         log_M_preds = log_M_preds.assign_coords(Age=ages)
         return np.exp(log_M_preds).rename(output_data_name)
 
-        
     # TODO: this should be completely removed and the user should compute it themselves
     def predict_historical(self):
         log_M_preds_historical = self.ax_[:, np.newaxis] + self.bx_[:, np.newaxis] * self.kt_

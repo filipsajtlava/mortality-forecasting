@@ -1,22 +1,25 @@
-import requests
 import io
 import re
 import os
 import json
-import pandas as pd
 from pathlib import Path
 from datetime import datetime, timezone
+
+import pandas as pd
+import requests
+
 from config import (
     STALE_FALLBACK_COUNTRY_AVAILABLE,
     CACHED_COUNTRY_AVAILABLE,
     CACHED_TTL_COUNTRY_CODE_DAYS,
     CACHED_TTL_COUNTRY_DATA_DAYS,
     FILE_SELECTION_COUNTRY_DATA,
+    DATA_DIRECTORY_NAME
 )
 
 class DataFetcherHMD:
-    def __init__(self, data_parent_directory_path: Path, country_code: str) -> None:
-        self._data_parent_directory_path = data_parent_directory_path
+    def __init__(self, country_code: str) -> None:
+        self._data_parent_directory_path = Path.cwd() / DATA_DIRECTORY_NAME 
         self._country_code = country_code
 
         self._username = os.getenv("HMD_USERNAME")

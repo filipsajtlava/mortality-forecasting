@@ -1,8 +1,11 @@
 from abc import ABC, abstractmethod
 from typing import Self
+
 import xarray as xr
 import numpy as np
-from data_downloading.loader import MortalityDataset
+
+from data_downloading.datasets import MortalityDataset
+
 
 class Model(ABC):
     def __init__(
@@ -12,7 +15,6 @@ class Model(ABC):
         ) -> None:
         self.lee_miller_fix = lee_miller_fix
         self.seed = seed
-
 
     @abstractmethod
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
@@ -29,7 +31,6 @@ class Model(ABC):
             similar to 'y' in sklearn.
         """
         pass
-
 
     @abstractmethod
     def predict(self, steps: int, simulations: int = 1) -> xr.DataArray:
@@ -49,7 +50,6 @@ class Model(ABC):
         """
         pass
 
-
     def _normalize_seed(self) -> np.random.Generator:
         """Normalizes the entered seed into a single np.random.Generator instance
 
@@ -61,7 +61,6 @@ class Model(ABC):
         if isinstance(self.seed, np.random.Generator):
             return self.seed
         return np.random.default_rng(self.seed)
-    
 
     def _validate_dataset(
             self, 

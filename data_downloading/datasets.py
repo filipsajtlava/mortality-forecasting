@@ -1,13 +1,12 @@
-from pathlib import Path
 from typing import Self
-import pandas as pd
+
 import numpy as np
-from core._data_structures import DemographicGrid
+import xarray as xr
+import pandas as pd
+
 from data_downloading._hmd_data_fetcher import DataFetcherHMD
-from config import (
-    FILE_SELECTION_COUNTRY_DATA,
-    DATA_DIRECTORY_NAME
-)
+from data_downloading._loaders import DemographicGridLoader
+from config import FILE_SELECTION_COUNTRY_DATA
 
 
 class MortalityDataset:
@@ -39,7 +38,6 @@ class MortalityDataset:
 
         Returns
         -------
-        self
             The instance itself with loaded mortality data attributes.
         """
 
@@ -50,18 +48,18 @@ class MortalityDataset:
 
         for metric in user_selection:
             if metric in successfully_loaded:
+                new_demo_grid = DemographicGridLoader.load_from_file(
+                    successfully_loaded[metric],
+                    starting_year,
+                    ending_year,
+                    maximum_age
+                )
                 setattr(
                     self,
-                    metric, 
-                    self._preprocessing(
-                        successfully_loaded[metric], 
-                        starting_year, 
-                        ending_year, 
-                        maximum_age
-                    )
+                    metric,
+                    new_demo_grid
                 )
         return self
-
 
     def train_test_split(
             self, 
@@ -110,16 +108,14 @@ class MortalityDataset:
                 setattr(
                     train_ds,
                     metric,
-                    demo_grid.filter_by_year(year, is_train=True, overlap=overlap)
+                    demo_grid._filter_by_year(year, is_train=True, overlap=overlap)
                 )
                 setattr(
                     test_ds,
                     metric,
-                    demo_grid.filter_by_year(year, is_train=False, overlap=overlap)
+                    demo_grid._filter_by_year(year, is_train=False, overlap=overlap)
                 )
-            
         return (train_ds, test_ds)
-
 
     def info(self) -> None:
         """Prints information about the currently loaded metrics in the 
@@ -135,7 +131,6 @@ class MortalityDataset:
                 )
             else:
                 print(f"{" "*5}Currently not loaded.")
-
 
     def _normalize_metrics(self, metrics: list[str] | str | None) -> list[str]:
         """Normalizes the entered metrics into a single list containing the user
@@ -166,7 +161,6 @@ class MortalityDataset:
             raise ValueError("The entered metrics are invalid")
         return user_selection
 
-
     def _initialize_and_validate(self) -> None:
         """Initializes the HMD data fetcher in the case that it was not initialized
         during an earlier load_data run. Also validates the country code and sets
@@ -178,41 +172,88 @@ class MortalityDataset:
         for metric in FILE_SELECTION_COUNTRY_DATA.keys():
             setattr(self, metric, None)
 
-        hmd_data_path = Path.cwd() / DATA_DIRECTORY_NAME 
-        fetcher = DataFetcherHMD(hmd_data_path, self.country_code)
+        fetcher = DataFetcherHMD(self.country_code)
 
         if not fetcher.is_country_code_valid():
             raise ValueError(f"Selected country code '{self.country_code}' is invalid")
         self._data_fetcher = fetcher
 
 
-    def _preprocessing(
+class DemographicGrid:
+    def __init__(
             self, 
-            full_path: str, 
-            starting_year: int,
-            ending_year: int, 
-            maximum_age: int
-        ) -> DemographicGrid:
-        """Minimal preprocessing of the downloaded HMD files.
+            data: pd.DataFrame,
+            overlap: bool = False
+        ) -> None:
+
+        self.data = data
+        self.overlap = overlap
+        self.year_interval = self._compute_year_interval()
+
+    def __getitem__(self, value_column: str) -> xr.DataArray:
+        """Pivots the data into a wide matrix format 
+        widely used by different mortality methods.
+
+        Parameters
+        ----------
+        value_column
+            The specific column of values to use for the pivot.
 
         Returns
         -------
-            MortalityData instance holding all of the data and the additional information together in one place
+            Pivoted xr.DataArray in it's wide version.
         """
-        data = pd.read_csv(full_path, sep=r"\s+", header=1, na_values=".")
-        data["Age"] = data["Age"].astype(str).str.replace("+", "", regex=False).astype(int) # We need to remove the "+" from 110+ to be able to use filters
-        data = data.query(f"Year >= {starting_year} and Year <= {ending_year} and Age <= {maximum_age}")
-        # TODO: This has to be redesigned with log values, to account for Gompertzs law
-        target_columns = ["Female", "Male", "Total"]
-        pivoted_values = data.pivot(
-            index="Year", 
-            columns="Age", 
-            values=target_columns
-        ).interpolate(method="linear", axis=0, limit_direction="both") 
-
-        interpolated_data = pivoted_values.stack(level="Age").reset_index()
-        interpolated_data[target_columns] = interpolated_data[target_columns].where(
-            interpolated_data[target_columns] != 0, 1e-9
+        return xr.DataArray(
+            self.data.pivot(index="Age", columns="Year", values=value_column)
         )
 
-        return DemographicGrid(interpolated_data)
+    @property
+    def Female(self) -> xr.DataArray:
+        return self["Female"]
+
+    @property
+    def Male(self) -> xr.DataArray:
+        return self["Male"]
+
+    @property
+    def Total(self) -> xr.DataArray:
+        return self["Total"]
+
+    def _compute_year_interval(self) -> dict[str, int]:
+        """Computes the maximum and minimum year in the data.
+        
+        Returns
+        -------
+            A dictionary containing the 'start' and 'end' years.
+        """
+        year_interval = {
+            "start": int(self.data["Year"].min()),
+            "end": int(self.data["Year"].max())
+        }
+        return year_interval
+
+    def _filter_by_year(self, year: int, is_train: bool, overlap: bool) -> Self:
+        """Filters the data by the selected year depending 
+        on the chosen parameters.
+        
+        Parameters
+        ----------
+        year
+            Year under (or over) which the method filters the dataset.
+        is_train
+            Boolean value dictating if the dataset is supposed to be training
+            or testing (training == years before the selected 'year').
+        overlap
+            Boolean value determining whether the boundary 'year' itself is included
+            in both the training and testing splits ('<='/'>' vs '<='/'=>').
+
+        Returns
+        -------
+            Filtered DemographicGrid instance.
+        """
+        if is_train:
+            query_str = f"Year <= {year}"
+        else:
+            query_str = f"Year >= {year}" if overlap else f"Year > {year}"
+        filtered_df = self.data.query(query_str).copy()
+        return DemographicGrid(filtered_df, overlap)
