@@ -1,6 +1,6 @@
 import xarray as xr
 import numpy as np
-from data_downloading.datasets import DemographicGrid
+from data_downloading._grid import DemographicGrid
 from core.base_model import Model
 
 # TODO: I was thinking about implementing an approach that only need you to select the mean/median
