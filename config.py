@@ -9,3 +9,6 @@ FILE_SELECTION_COUNTRY_DATA = {
     "E": "Exposures_1x1.txt",
     "D": "Deaths_1x1.txt"
 }
+
+VALUE_COLUMNS = ["Female", "Male", "Total"]
+MAXIMUM_POISSON_ITERATIONS = 300

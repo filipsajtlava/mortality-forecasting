@@ -5,6 +5,8 @@ import pandas as pd
 import numpy as np
 import xarray as xr
 
+from config import VALUE_COLUMNS
+
 
 class DemographicGrid:
     def __init__(
@@ -146,7 +148,7 @@ class DemographicGridLoader:
         -------
             Preprocessed dataset.
         """
-        target_columns = ["Female", "Male", "Total"]
+        target_columns = VALUE_COLUMNS.copy()
         df = raw_df.copy()
 
         df[target_columns] = df[target_columns].where(

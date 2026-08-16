@@ -5,8 +5,10 @@ import xarray as xr
 
 from data_downloading.datasets import MortalityDataset
 from core.base_model import Model
+from core.commons import validate_value_column
 
 class LeeCarterModel(Model):
+    _REQUIRED_GRIDS = ("M")
     # TODO: add simulations to the __init__
     def __init__(
             self,
@@ -18,12 +20,15 @@ class LeeCarterModel(Model):
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
         """Fit the Lee-Carter model using SVD.
         """
+        self._validate_hyperparameters()
+        validate_value_column(value_column)
+        self._validate_dataset(
+            mortality_data=mortality_data,
+            required_grids=self._REQUIRED_GRIDS
+        )
+
         self.mortality_data = mortality_data
         self.value_column = value_column
-        self._validate_dataset(
-            mortality_data=self.mortality_data,
-            required_grids=["M"]
-        )
         self.overlap_step = 0 if self.mortality_data.M.overlap else 1
 
         log_M = np.log(self.mortality_data.M[self.value_column])
@@ -105,14 +110,15 @@ class LeeCarterModel(Model):
         return np.exp(log_M_preds).rename(output_data_name)
 
     # TODO: this should be completely removed and the user should compute it themselves
+    # TODO: make this adhere to the xr.DataArray approach 5 lines above
     def predict_historical(self):
         log_M_preds_historical = self.ax_[:, np.newaxis] + self.bx_[:, np.newaxis] * self.kt_
         
         return xr.DataArray(
             np.exp(log_M_preds_historical),
             coords=[
-                self.mortality_data.M[self.value_column].to_pandas().index.to_numpy(), 
-                self.mortality_data.M[self.value_column].to_pandas().columns.to_numpy()
+                self.mortality_data.M[self.value_column]["Age"].to_numpy(), 
+                self.mortality_data.M[self.value_column]["Year"].to_numpy()
             ],
             dims=["Age", "Year"],
             name="mx_historical"

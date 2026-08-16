@@ -8,6 +8,8 @@ from data_downloading.datasets import MortalityDataset
 
 
 class Model(ABC):
+    _PARAM_CHOICES = {}
+
     def __init__(
             self,
             lee_miller_fix: bool = False,
@@ -50,6 +52,14 @@ class Model(ABC):
         """
         pass
 
+    def _validate_hyperparameters(self) -> None:
+        for param, possible_values in self._PARAM_CHOICES.items():
+            if hasattr(self, param) and getattr(self, param) not in possible_values:
+                raise ValueError(
+                    f"The selected hyperparameter '{getattr(self, param)}' is " \
+                    f"unavailable for '{param}', try one of the following {possible_values}"
+                )
+                
     def _normalize_seed(self) -> np.random.Generator:
         """Normalizes the entered seed into a single np.random.Generator instance
 
