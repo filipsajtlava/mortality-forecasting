@@ -112,6 +112,6 @@ class Model(ABC):
                 if reference_year_interval != getattr(mortality_data, grid).year_interval:
                     raise ValueError(
                         f"Year interval mismatch between grid " \
-                        f"'{required_grids[0]}' and grid '{grid}'"
+                        f"'{required_grids[0]}' and grid '{grid}'."
                     )
         

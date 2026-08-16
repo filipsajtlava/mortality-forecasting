@@ -1,16 +1,15 @@
-from typing import Self
+from typing import Self, Literal
 
 import numpy as np
 import xarray as xr
-import pandas as pd
 
 from data_downloading.datasets import MortalityDataset
 from core.base_model import Model
+from models.lee_carter import LeeCarterModel
 from core.commons import validate_value_column
 from config import MAXIMUM_POISSON_ITERATIONS
 
 class PoissonModel(Model):
-    _REQUIRED_GRIDS = ("E", "D")
     _PARAM_CHOICES = {
         **Model._PARAM_CHOICES,
         "initialization": ("naive", "SVD")
@@ -20,19 +19,20 @@ class PoissonModel(Model):
         self, 
         lee_miller_fix: bool = False,
         seed: int | np.random.Generator | None = None,
-        initialization: str = "naive",
-        iterator_epsilon: float = 0.01
+        initialization: Literal["naive", "SVD"] = "naive",
+        iterator_epsilon: float = 10e-9
     ):
         self.iterator_epsilon = iterator_epsilon
-        self.initialization = initialization # TODO: implement into initialize params
+        self.initialization = initialization
         super().__init__(lee_miller_fix=lee_miller_fix, seed=seed)
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
+        required_grids = ("E", "D") if self.initialization == "naive" else ("E", "D", "M")
         self._validate_hyperparameters()
         validate_value_column(value_column)
         self._validate_dataset(
             mortality_data=mortality_data,
-            required_grids=self._REQUIRED_GRIDS
+            required_grids=required_grids
         )
 
         self.mortality_data = mortality_data
@@ -40,118 +40,114 @@ class PoissonModel(Model):
         self.D = self.mortality_data.D[self.value_column]
         self.E = self.mortality_data.E[self.value_column]
 
-        self._initialize_parameters()
-        log_likelihood_previous = 0
+        ax, bx, kt = self._initialize_parameters()
+        self.log_likelihood_history_ = [self._compute_log_likelihood(ax, bx, kt)]
         likelihood_change = np.inf
         iteration = 0
 
         while likelihood_change > self.iterator_epsilon and iteration < MAXIMUM_POISSON_ITERATIONS:
             iteration += 1
-            self._alpha_update(iteration)
-            self._beta_update(iteration)
-            self._kappa_update(iteration)
+            ax_new = self._get_new_alpha(ax, bx, kt)
+            bx_new = self._get_new_beta(ax_new, bx, kt) # Each iteration takes new params
+            kt_new = self._get_new_kappa(ax_new, bx_new, kt)
+            self.log_likelihood_history_.append(
+                self._compute_log_likelihood(ax_new, bx_new, kt_new)
+            )
+            likelihood_change = abs(
+                self.log_likelihood_history_[-1] - 
+                self.log_likelihood_history_[-2]
+            )
+            ax = ax_new
+            bx = bx_new
+            kt = kt_new
+            print(f"Iteration: {iteration}: {float(likelihood_change)}")
 
-            log_likelihood = self._compute_log_likelihood(iteration)
-            likelihood_change = abs(log_likelihood - log_likelihood_previous)
-            log_likelihood_previous = log_likelihood
-            #print(f"Iteration: {iteration}: {float(likelihood_change)}")
+        if iteration >= MAXIMUM_POISSON_ITERATIONS:
+            print(
+                f"WARNING: the maximum amount of iterations " \
+                f"({MAXIMUM_POISSON_ITERATIONS}) has been reached, " \
+                f"so the algorithm might not have converged."
+            )
 
-        self.ax_history_ = self.ax_history_.sel(Iteration=slice(0, iteration))
-        self.bx_history_ = self.bx_history_.sel(Iteration=slice(0, iteration))
-        self.kt_history_ = self.kt_history_.sel(Iteration=slice(0, iteration))
+        self.ax_ = ax
+        self.bx_ = bx
+        self.kt_ = kt
         return self
 
-    def _initialize_parameters(self):
-        ages = self.D.Age
-        years = self.D.Year
-        iterations = np.arange(0, MAXIMUM_POISSON_ITERATIONS + 1)
+    def _initialize_parameters(
+            self
+        ) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
+        ages = self.D.Age.values
+        years = self.D.Year.values
 
-        self.ax_history_ = xr.DataArray(
-            np.full([len(ages), len(iterations)], np.nan),
-            dims=["Age", "Iteration"],
-            coords={
-                "Age": ages,
-                "Iteration": iterations
-            }
-        )
-        self.bx_history_ = xr.DataArray(
-            np.full([len(ages), len(iterations)], np.nan),
-            dims=["Age", "Iteration"],
-            coords={
-                "Age": ages,
-                "Iteration": iterations
-            }
-        )
-        self.kt_history_ = xr.DataArray(
-            np.full([len(years), len(iterations)], np.nan),
-            dims=["Year", "Iteration"],
-            coords={
-                "Year": years,
-                "Iteration": iterations
-            }
-        )
+        if self.initialization == "SVD":
+            lc_model = LeeCarterModel().fit(self.mortality_data, self.value_column)
+            return (lc_model.ax_, lc_model.bx_, lc_model.kt_)
+        elif self.initialization == "naive":
+            ax = xr.DataArray(0, coords=[("Age", ages)])
+            bx = xr.DataArray(0, coords=[("Age", ages)])
+            kt = xr.DataArray(1, coords=[("Year", years)])
 
-        if self.initialization == "naive":
-            self.ax_history_.loc[{"Iteration": 0}] = 0
-            self.bx_history_.loc[{"Iteration": 0}] = 0
-            self.kt_history_.loc[{"Iteration": 0}] = 1
+        return (ax, bx, kt)
 
-    def _compute_log_likelihood(self, iteration: int) -> float:
-        log_likelihood = self.D * (
-            self.ax_history_.sel(Iteration=iteration) +
-            self.bx_history_.sel(Iteration=iteration) *
-            self.kt_history_.sel(Iteration=iteration)
-        ) - self.E * np.exp(
-            self.ax_history_.sel(Iteration=iteration) +
-            self.bx_history_.sel(Iteration=iteration) *
-            self.kt_history_.sel(Iteration=iteration)
-        )
-        return log_likelihood.sum()
+    def _calculate_log_mortality(
+            self, 
+            ax: xr.DataArray, 
+            bx: xr.DataArray,
+            kt: xr.DataArray
+        ) -> xr.DataArray:
+        return ax + bx * kt
 
-    def _alpha_update(self, iteration: int) -> None:
-        D_pred = self.E * np.exp(
-            self.ax_history_.sel(Iteration=iteration - 1) + 
-            self.bx_history_.sel(Iteration=iteration - 1) * 
-            self.kt_history_.sel(Iteration=iteration - 1)
-        )
+    def _get_new_alpha(
+            self, 
+            ax: xr.DataArray, 
+            bx: xr.DataArray, 
+            kt: xr.DataArray
+        ) -> xr.DataArray:
+        D_pred = self.E * np.exp(ax + bx * kt)
         ax_new = (
-            self.ax_history_.sel(Iteration=iteration - 1) + 
-            (self.D - D_pred).sum(dim="Year") / D_pred.sum(dim="Year")
+            ax + (self.D - D_pred).sum(dim="Year") / D_pred.sum(dim="Year")
         )
-        self.ax_history_.loc[{"Iteration": iteration}] = ax_new
+        return ax_new
         
-    def _beta_update(self, iteration: int):
-        D_pred = self.E * np.exp(
-            self.ax_history_.sel(Iteration=iteration) + # Note the +1
-            self.bx_history_.sel(Iteration=iteration - 1) * 
-            self.kt_history_.sel(Iteration=iteration - 1)
-        )
+    def _get_new_beta(
+            self, 
+            ax: xr.DataArray, 
+            bx: xr.DataArray, 
+            kt: xr.DataArray
+        ) -> xr.DataArray:
+        D_pred = self.E * np.exp(ax + bx * kt)
         bx_new = (
-            self.bx_history_.sel(Iteration=iteration - 1) + 
-            (self.kt_history_.sel(Iteration=iteration - 1) * (self.D - D_pred))
-            .sum(dim="Year") / 
-            (D_pred * self.kt_history_.sel(Iteration=iteration - 1)**2)
-            .sum(dim="Year")
+            bx + (kt * (self.D - D_pred)).sum(dim="Year") / 
+            (D_pred * kt*kt).sum(dim="Year")
         )
-
         bx_new = bx_new / bx_new.sum()
-        self.bx_history_.loc[{"Iteration": iteration}] = bx_new
+        return bx_new
 
-    def _kappa_update(self, iteration: int):
-        D_pred = self.E * np.exp(
-            self.ax_history_.sel(Iteration=iteration) +
-            self.bx_history_.sel(Iteration=iteration) * 
-            self.kt_history_.sel(Iteration=iteration - 1)
-        )
+    def _get_new_kappa(
+            self, 
+            ax: xr.DataArray, 
+            bx: xr.DataArray, 
+            kt: xr.DataArray
+        ) -> xr.DataArray:
+        D_pred = self.E * np.exp(ax + bx * kt)
         kt_new = (
-            self.kt_history_.sel(Iteration=iteration - 1) + 
-            (self.bx_history_.sel(Iteration=iteration) * (self.D - D_pred))
-            .sum(dim="Age") / 
-            (D_pred * self.bx_history_.sel(Iteration=iteration)**2)
-            .sum(dim="Age")
+            kt + (bx * (self.D - D_pred)).sum(dim="Age") / 
+            (D_pred * bx*bx).sum(dim="Age")
         )
         kt_new = kt_new - kt_new.mean()
-        self.kt_history_.loc[{"Iteration": iteration}] = kt_new
+        return kt_new
+
+    def _compute_log_likelihood(
+            self, 
+            ax: xr.DataArray, 
+            bx: xr.DataArray, 
+            kt: xr.DataArray
+        ) -> float:
+        log_likelihood = (
+            self.D * (ax + bx * kt) - self.E * np.exp(ax + bx * kt)
+        )
+        return float(log_likelihood.sum())
 
     def predict(self, steps: int, simulations: int = 1) -> xr.DataArray:
         return steps

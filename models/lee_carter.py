@@ -8,7 +8,6 @@ from core.base_model import Model
 from core.commons import validate_value_column
 
 class LeeCarterModel(Model):
-    _REQUIRED_GRIDS = ("M")
     # TODO: add simulations to the __init__
     def __init__(
             self,
@@ -20,11 +19,12 @@ class LeeCarterModel(Model):
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
         """Fit the Lee-Carter model using SVD.
         """
+        required_grids = ("M", )
         self._validate_hyperparameters()
         validate_value_column(value_column)
         self._validate_dataset(
             mortality_data=mortality_data,
-            required_grids=self._REQUIRED_GRIDS
+            required_grids=required_grids
         )
 
         self.mortality_data = mortality_data
@@ -34,20 +34,23 @@ class LeeCarterModel(Model):
         log_M = np.log(self.mortality_data.M[self.value_column])
 
         if self.lee_miller_fix:
-            ax_estimate_da = log_M.sel(Year=self.mortality_data.M.year_interval["end"])
+            self.ax_ = log_M.sel(Year=self.mortality_data.M.year_interval["end"])
         else:
-            ax_estimate_da = log_M.mean(axis=1)
-        self.ax_ = ax_estimate_da.values
-        Z_centered = log_M - ax_estimate_da
+            self.ax_ = log_M.mean(axis=1)
+        Z_centered = log_M - self.ax_
 
         U, s, V = np.linalg.svd(Z_centered.values, full_matrices=False)
         
         scaling_factor = U[:, 0].sum()
-        self.bx_ = U[:, 0] / scaling_factor
-        self.kt_ = s[0] * V[0, :] * scaling_factor
+        self.bx_ = xr.DataArray(
+            U[:, 0] / scaling_factor, coords=[("Age", log_M.Age.values)]
+        )
+        self.kt_ = xr.DataArray(
+            s[0] * V[0, :] * scaling_factor, coords=[("Year", log_M.Year.values)]
+        )
 
         self.explained_variance_ = s[0]**2 / np.sum(s**2)
-        self.drift_ = (self.kt_[-1] - self.kt_[0]) / (len(self.kt_) - 1)
+        self.drift_ = float(self.kt_[-1] - self.kt_[0]) / (len(self.kt_) - 1)
         self.std_of_errors_ = np.std(np.diff(self.kt_) - self.drift_)
         return self
 
@@ -58,9 +61,8 @@ class LeeCarterModel(Model):
         innovations = rng.normal(
             self.drift_, self.std_of_errors_, size=(steps, simulations)
         )
-        innovations = np.insert(innovations, 0, 0, axis=0)
-        kt_forecast = self.kt_[-1] + np.cumsum(innovations, axis=0)
-
+        innovations = np.insert(innovations, 0, 0, axis=0)    
+        kt_forecast = self.kt_[-1].values + np.cumsum(innovations, axis=0)
         last_year = self.mortality_data.M.year_interval["end"]
         pred_years = np.arange(self.overlap_step, steps + 1) + last_year
 
@@ -76,7 +78,7 @@ class LeeCarterModel(Model):
         """
         drifts = np.repeat(self.drift_, steps)
         drifts = np.insert(drifts, 0, 0)
-        kt_forecast = self.kt_[-1] + np.cumsum(drifts, axis=0)
+        kt_forecast = self.kt_[-1].values + np.cumsum(drifts, axis=0)
 
         last_year = self.mortality_data.M.year_interval["end"]
         pred_years = np.arange(self.overlap_step, steps + 1) + last_year
@@ -110,16 +112,5 @@ class LeeCarterModel(Model):
         return np.exp(log_M_preds).rename(output_data_name)
 
     # TODO: this should be completely removed and the user should compute it themselves
-    # TODO: make this adhere to the xr.DataArray approach 5 lines above
     def predict_historical(self):
-        log_M_preds_historical = self.ax_[:, np.newaxis] + self.bx_[:, np.newaxis] * self.kt_
-        
-        return xr.DataArray(
-            np.exp(log_M_preds_historical),
-            coords=[
-                self.mortality_data.M[self.value_column]["Age"].to_numpy(), 
-                self.mortality_data.M[self.value_column]["Year"].to_numpy()
-            ],
-            dims=["Age", "Year"],
-            name="mx_historical"
-        )
+        return np.exp(self.ax_ + self.bx_ * self.kt_)
