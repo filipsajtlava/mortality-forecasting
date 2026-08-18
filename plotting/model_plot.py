@@ -26,7 +26,6 @@ class ModelPlotter(Plotter):
         for i, (parameter, data_array) in enumerate(
             self.model.parameters_.items()
         ):
-            # extracts the coordinate index (such as age, year, etc.)
             x_dim = data_array.dims[0]
             x_axis = data_array.coords[x_dim].values
 
@@ -124,6 +123,10 @@ class ModelPlotter(Plotter):
             x_axis_ages,
             predicted,
             **plot_config
+        )
+        ax.set(
+            xlabel=f"{config.AGE_DIM} {config.PLOTTING_LABELS[config.AGE_DIM]}",
+            ylabel=f"Log-mortalities"
         )
         ax.legend()
         return ax

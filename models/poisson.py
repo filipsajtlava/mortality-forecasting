@@ -21,10 +21,12 @@ class PoissonModel(Model):
         lee_miller_fix: bool = False,
         seed: int | np.random.Generator | None = None,
         initialization: Literal["naive", "SVD"] = "naive",
-        iterator_epsilon: float = 10e-9
+        iterator_epsilon: float = 10e-9,
+        verbose: bool = False
     ):
         self.iterator_epsilon = iterator_epsilon
         self.initialization = initialization
+        self.verbose = verbose
         super().__init__(lee_miller_fix=lee_miller_fix, seed=seed)
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
@@ -65,6 +67,9 @@ class PoissonModel(Model):
             bx = bx_new
             kt = kt_new
 
+            if self.verbose:
+                print(f"Iteration {iteration}: change in log-likelihood {likelihood_change}")
+
         if iteration >= config.MAXIMUM_POISSON_ITERATIONS:
             print(
                 f"WARNING: the maximum amount of iterations " \
@@ -94,16 +99,16 @@ class PoissonModel(Model):
     def _initialize_parameters(
             self
         ) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
-        ages = self.D.Age.values
-        years = self.D.Year.values
+        ages = self.D[config.AGE_DIM].values
+        years = self.D[config.YEAR_DIM].values
 
         if self.initialization == "SVD":
             lc_model = LeeCarterModel().fit(self.mortality_data, self.value_column)
             return (lc_model.ax_, lc_model.bx_, lc_model.kt_)
         elif self.initialization == "naive":
-            ax = xr.DataArray(0, coords=[("Age", ages)])
-            bx = xr.DataArray(0, coords=[("Age", ages)])
-            kt = xr.DataArray(1, coords=[("Year", years)])
+            ax = xr.DataArray(0, coords=[(config.AGE_DIM, ages)])
+            bx = xr.DataArray(0, coords=[(config.AGE_DIM, ages)])
+            kt = xr.DataArray(1, coords=[(config.YEAR_DIM, years)])
 
         return (ax, bx, kt)
 
@@ -115,7 +120,8 @@ class PoissonModel(Model):
         ) -> xr.DataArray:
         D_pred = self.E * np.exp(ax + bx * kt)
         ax_new = (
-            ax + (self.D - D_pred).sum(dim="Year") / D_pred.sum(dim="Year")
+            ax + (self.D - D_pred).sum(dim=config.YEAR_DIM) / 
+            D_pred.sum(dim=config.YEAR_DIM)
         )
         return ax_new
         
@@ -127,8 +133,8 @@ class PoissonModel(Model):
         ) -> xr.DataArray:
         D_pred = self.E * np.exp(ax + bx * kt)
         bx_new = (
-            bx + (kt * (self.D - D_pred)).sum(dim="Year") / 
-            (D_pred * kt*kt).sum(dim="Year")
+            bx + (kt * (self.D - D_pred)).sum(dim=config.YEAR_DIM) / 
+            (D_pred * kt*kt).sum(dim=config.YEAR_DIM)
         )
         bx_new = bx_new / bx_new.sum()
         return bx_new
@@ -141,8 +147,8 @@ class PoissonModel(Model):
         ) -> xr.DataArray:
         D_pred = self.E * np.exp(ax + bx * kt)
         kt_new = (
-            kt + (bx * (self.D - D_pred)).sum(dim="Age") / 
-            (D_pred * bx*bx).sum(dim="Age")
+            kt + (bx * (self.D - D_pred)).sum(dim=config.AGE_DIM) / 
+            (D_pred * bx*bx).sum(dim=config.AGE_DIM)
         )
         kt_new = kt_new - kt_new.mean()
         return kt_new
