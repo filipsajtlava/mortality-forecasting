@@ -1,15 +1,21 @@
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from matplotlib.colorbar import Colorbar
+from matplotlib.axes import Axes
 
-def plot_configuration(axis_object: plt.Axes, legend_location: str = None, legend_size: float = 12.5, 
-                       font_size: float = 12, colorbar_object: Colorbar = None) -> plt.Axes:
+def plot_configuration(
+        ax: Axes, 
+        legend_location: str | None = None, 
+        legend_size: float = 12.5, 
+        font_size: float = 12, 
+        colorbar_object: Colorbar | None = None
+    ) -> Axes:
     """Configuration for most plots used troughout the thesis.
     Encapsulates the legend and the plot itself using black lines.
 
     Parameters
     ----------
-    axis_object
+    ax
         Original Matplotlib axis object.
     legend_location, optional
         Location of the legend in the plot (also handles if legend is present), by default None.
@@ -25,15 +31,15 @@ def plot_configuration(axis_object: plt.Axes, legend_location: str = None, legen
     -------
         Matplotlib axis object with applied configurations.
     """
-    for spine in axis_object.spines.values():
+    for spine in ax.spines.values():
         spine.set_visible(True)
         spine.set_color('black')
         spine.set_linewidth(1.5)
 
-    axis_object.tick_params(axis="both", which="major", length=4, color="black")
+    ax.tick_params(axis="both", which="major", length=4, color="black")
 
     if legend_location:
-        leg = axis_object.legend(
+        leg = ax.legend(
             frameon=True,
             fancybox=False,
             facecolor="white",
@@ -54,15 +60,15 @@ def plot_configuration(axis_object: plt.Axes, legend_location: str = None, legen
     else:
         font_name = "serif"
         
-    axis_object.title.set_fontname(font_name)
-    axis_object.xaxis.label.set_fontname(font_name)
-    axis_object.yaxis.label.set_fontname(font_name)
-    axis_object.title.set_fontsize(font_size)
-    axis_object.xaxis.label.set_fontsize(font_size)
-    axis_object.yaxis.label.set_fontsize(font_size)
+    ax.title.set_fontname(font_name)
+    ax.xaxis.label.set_fontname(font_name)
+    ax.yaxis.label.set_fontname(font_name)
+    ax.title.set_fontsize(font_size)
+    ax.xaxis.label.set_fontsize(font_size)
+    ax.yaxis.label.set_fontsize(font_size)
 
     if colorbar_object:
         colorbar_object.ax.yaxis.label.set_fontname(font_name)
         colorbar_object.ax.yaxis.label.set_fontsize(font_size)
 
-    return axis_object
+    return ax

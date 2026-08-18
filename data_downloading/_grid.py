@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import xarray as xr
 
-from config import VALUE_COLUMNS
+import config
 
 
 class DemographicGrid:
@@ -33,7 +33,11 @@ class DemographicGrid:
             Pivoted xr.DataArray in it's wide version.
         """
         return xr.DataArray(
-            self.data.pivot(index="Age", columns="Year", values=value_column)
+            self.data.pivot(
+                index=config.AGE_DIM, 
+                columns=config.YEAR_DIM, 
+                values=value_column
+            )
         )
 
     @property
@@ -56,8 +60,8 @@ class DemographicGrid:
             A dictionary containing the 'start' and 'end' years.
         """
         year_interval = {
-            "start": int(self.data["Year"].min()),
-            "end": int(self.data["Year"].max())
+            "start": int(self.data[config.YEAR_DIM].min()),
+            "end": int(self.data[config.YEAR_DIM].max())
         }
         return year_interval
 
@@ -81,9 +85,12 @@ class DemographicGrid:
             Filtered DemographicGrid instance.
         """
         if is_train:
-            query_str = f"Year <= {year}"
+            query_str = f"{config.YEAR_DIM} <= {year}"
         else:
-            query_str = f"Year >= {year}" if overlap else f"Year > {year}"
+            query_str = (
+                f"{config.YEAR_DIM} >= {year}" if overlap 
+                else f"{config.YEAR_DIM} > {year}"
+            )
         filtered_df = self.data.query(query_str).copy()
         return DemographicGrid(filtered_df, overlap)
 
@@ -116,15 +123,15 @@ class DemographicGridLoader:
             A loaded DemographicGrid instance. 
         """
         data = pd.read_csv(full_path, sep=r"\s+", header=1, na_values=".")
-        data["Age"] = (
-            data["Age"]
+        data[config.AGE_DIM] = (
+            data[config.AGE_DIM]
             .astype(str).str
             .replace("+", "", regex=False)
             .astype(int)
         ) # We need to remove the "+" from 110+ to be able to use filters
         loading_query = (
-            f"Year >= {starting_year} " +
-            f"and Year <= {ending_year} and Age <= {maximum_age}"
+            f"{config.YEAR_DIM} >= {starting_year} " +
+            f"and {config.YEAR_DIM} <= {ending_year} and {config.AGE_DIM} <= {maximum_age}"
         )
         data = data.query(loading_query)
         preprocessed_data = cls.preprocessing(data)
@@ -148,7 +155,7 @@ class DemographicGridLoader:
         -------
             Preprocessed dataset.
         """
-        target_columns = VALUE_COLUMNS.copy()
+        target_columns = config.VALUE_COLUMNS.copy()
         df = raw_df.copy()
 
         df[target_columns] = df[target_columns].where(
@@ -156,11 +163,11 @@ class DemographicGridLoader:
         )
         df[target_columns] = np.log(df[target_columns])
         df = df.pivot(
-            index="Year", 
-            columns="Age", 
+            index=config.AGE_DIM, 
+            columns=config.YEAR_DIM, 
             values=target_columns
-        ).interpolate(method="linear", axis=0, limit_direction="both") 
+        ).interpolate(method="linear", axis="index", limit_direction="both") 
         df = np.exp(df)
 
-        df = df.stack(level="Age", future_stack=True).reset_index()
+        df = df.stack(level=config.YEAR_DIM, future_stack=True).reset_index()
         return df

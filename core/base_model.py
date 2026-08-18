@@ -10,6 +10,11 @@ from data_downloading.datasets import MortalityDataset
 class Model(ABC):
     _PARAM_CHOICES = {}
 
+    # TODO: since the model plotters depend on parameters_, that should be explicitely
+    # implemented as an abstract method - property, so that it enforces the idea that
+    # every model has to have it, making the plotter unbreakable
+    # TODO: if other models wont accept the lee_miller fix (only the lc will), its good to remove
+    # it from here and just put it individually into the submodel init, calling super().__init__(seed)
     def __init__(
             self,
             lee_miller_fix: bool = False,
@@ -50,6 +55,11 @@ class Model(ABC):
             Data forecast (either a matrix or a tensor,
             depending on the number of simulations chosen).
         """
+        pass
+
+    @abstractmethod
+    def predict_mortality(self) -> xr.DataArray:
+        """Predicts the mortalities from the fitted parameters."""
         pass
 
     def _validate_hyperparameters(self) -> None:

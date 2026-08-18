@@ -8,18 +8,11 @@ from datetime import datetime, timezone
 import pandas as pd
 import requests
 
-from config import (
-    STALE_FALLBACK_COUNTRY_AVAILABLE,
-    CACHED_COUNTRY_AVAILABLE,
-    CACHED_TTL_COUNTRY_CODE_DAYS,
-    CACHED_TTL_COUNTRY_DATA_DAYS,
-    FILE_SELECTION_COUNTRY_DATA,
-    DATA_DIRECTORY_NAME
-)
+import config
 
 class DataFetcherHMD:
     def __init__(self, country_code: str) -> None:
-        self._data_parent_directory_path = Path.cwd() / DATA_DIRECTORY_NAME 
+        self._data_parent_directory_path = Path.cwd() / config.DATA_DIRECTORY_NAME 
         self._country_code = country_code
 
         self._username = os.getenv("HMD_USERNAME")
@@ -40,11 +33,11 @@ class DataFetcherHMD:
         -------
             True if the country code is valid, False otherwise.
         """
-        cache_codes_path = self._data_parent_directory_path / CACHED_COUNTRY_AVAILABLE
+        cache_codes_path = self._data_parent_directory_path / config.CACHED_COUNTRY_AVAILABLE
         fetch_error_code = None
 
         if not cache_codes_path.exists() or \
-        self._is_cache_expired(cache_codes_path, CACHED_TTL_COUNTRY_CODE_DAYS):
+        self._is_cache_expired(cache_codes_path, config.CACHED_TTL_COUNTRY_CODE_DAYS):
             fetch_error_code = self._fetch_valid_country_codes(cache_codes_path)
 
         if fetch_error_code == 200 or fetch_error_code is None:
@@ -52,7 +45,7 @@ class DataFetcherHMD:
         else:
             error_msg = "WARNING: Defaulting to a fallback country codes list"
             print(error_msg)
-            comparison_source_path = Path(__file__).parent / STALE_FALLBACK_COUNTRY_AVAILABLE
+            comparison_source_path = Path(__file__).parent / config.STALE_FALLBACK_COUNTRY_AVAILABLE
             
         with comparison_source_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
@@ -103,11 +96,11 @@ class DataFetcherHMD:
     
         failed_downloads = []
         successfully_loaded = {}
-        for key, file in FILE_SELECTION_COUNTRY_DATA.items():
+        for key, file in config.FILE_SELECTION_COUNTRY_DATA.items():
             path_to_file = country_data_path / file
             
             if not path_to_file.exists() or \
-            self._is_cache_expired(path_to_file, CACHED_TTL_COUNTRY_DATA_DAYS):
+            self._is_cache_expired(path_to_file, config.CACHED_TTL_COUNTRY_DATA_DAYS):
                 self._ensure_credentials_present()
                 if self._session is None:
                     self._initialize_session()

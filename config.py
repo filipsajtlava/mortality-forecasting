@@ -12,3 +12,12 @@ FILE_SELECTION_COUNTRY_DATA = {
 
 VALUE_COLUMNS = ["Female", "Male", "Total"]
 MAXIMUM_POISSON_ITERATIONS = 300
+
+AGE_DIM = "Age"
+YEAR_DIM = "Year"
+SIMULATION_DIM = "Simulation"
+
+PLOTTING_LABELS = {
+    AGE_DIM: "x",
+    YEAR_DIM: "t"
+}

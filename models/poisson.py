@@ -6,8 +6,9 @@ import xarray as xr
 from data_downloading.datasets import MortalityDataset
 from core.base_model import Model
 from models.lee_carter import LeeCarterModel
+from plotting.model_plot import ModelPlotter
 from core.commons import validate_value_column
-from config import MAXIMUM_POISSON_ITERATIONS
+import config
 
 class PoissonModel(Model):
     _PARAM_CHOICES = {
@@ -27,9 +28,9 @@ class PoissonModel(Model):
         super().__init__(lee_miller_fix=lee_miller_fix, seed=seed)
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
-        required_grids = ("E", "D") if self.initialization == "naive" else ("E", "D", "M")
         self._validate_hyperparameters()
         validate_value_column(value_column)
+        required_grids = ("E", "D") if self.initialization == "naive" else ("E", "D", "M")
         self._validate_dataset(
             mortality_data=mortality_data,
             required_grids=required_grids
@@ -45,7 +46,10 @@ class PoissonModel(Model):
         likelihood_change = np.inf
         iteration = 0
 
-        while likelihood_change > self.iterator_epsilon and iteration < MAXIMUM_POISSON_ITERATIONS:
+        while (
+            likelihood_change > self.iterator_epsilon and 
+            iteration < config.MAXIMUM_POISSON_ITERATIONS
+        ):
             iteration += 1
             ax_new = self._get_new_alpha(ax, bx, kt)
             bx_new = self._get_new_beta(ax_new, bx, kt) # Each iteration takes new params
@@ -60,19 +64,32 @@ class PoissonModel(Model):
             ax = ax_new
             bx = bx_new
             kt = kt_new
-            print(f"Iteration: {iteration}: {float(likelihood_change)}")
 
-        if iteration >= MAXIMUM_POISSON_ITERATIONS:
+        if iteration >= config.MAXIMUM_POISSON_ITERATIONS:
             print(
                 f"WARNING: the maximum amount of iterations " \
-                f"({MAXIMUM_POISSON_ITERATIONS}) has been reached, " \
+                f"({config.MAXIMUM_POISSON_ITERATIONS}) has been reached, " \
                 f"so the algorithm might not have converged."
             )
 
         self.ax_ = ax
         self.bx_ = bx
         self.kt_ = kt
+        self.parameters_ = xr.Dataset(
+            data_vars={
+                "ax": self.ax_,
+                "bx": self.bx_,
+                "kt": self.kt_
+            }
+        )
         return self
+
+    @property
+    def plot(self) -> ModelPlotter:
+        return ModelPlotter(self)
+
+    def predict_mortality(self) -> xr.DataArray:
+        return np.exp(self.ax_ + self.bx_ * self.kt_)
 
     def _initialize_parameters(
             self
@@ -89,14 +106,6 @@ class PoissonModel(Model):
             kt = xr.DataArray(1, coords=[("Year", years)])
 
         return (ax, bx, kt)
-
-    def _calculate_log_mortality(
-            self, 
-            ax: xr.DataArray, 
-            bx: xr.DataArray,
-            kt: xr.DataArray
-        ) -> xr.DataArray:
-        return ax + bx * kt
 
     def _get_new_alpha(
             self, 
