@@ -31,21 +31,21 @@ class LeeCarterModel(Model):
         log_M = np.log(self.mortality_data.M[self.value_column])
 
         if self.lee_miller_fix:
-            self.ax_ = log_M.sel({
+            ax_ = log_M.sel({
                 config.YEAR_DIM: self.mortality_data.M.year_interval["end"]
             })
         else:
-            self.ax_ = log_M.mean(axis=1)
-        Z_centered = log_M - self.ax_
+            ax_ = log_M.mean(axis=1)
+        Z_centered = log_M - ax_
 
         U, s, V = np.linalg.svd(Z_centered.values, full_matrices=False)
         
         scaling_factor = U[:, 0].sum()
-        self.bx_ = xr.DataArray(
+        bx_ = xr.DataArray(
             U[:, 0] / scaling_factor, 
             coords=[(config.AGE_DIM, log_M[config.AGE_DIM].values)]
         )
-        self.kt_ = xr.DataArray(
+        kt_ = xr.DataArray(
             s[0] * V[0, :] * scaling_factor, 
             coords=[(config.YEAR_DIM, log_M[config.YEAR_DIM].values)]
         )
@@ -53,13 +53,13 @@ class LeeCarterModel(Model):
         self.parameters_ = ParameterContainer(
             static=xr.Dataset(
                 data_vars={
-                    "ax": self.ax_,
-                    "bx": self.bx_
+                    "ax": ax_,
+                    "bx": bx_
                 }
             ),
             period=xr.Dataset(
                 data_vars={
-                    "kt": self.kt_
+                    "kt": kt_
                 },                
                 attrs={
                     "overlap": self.mortality_data.M.overlap,

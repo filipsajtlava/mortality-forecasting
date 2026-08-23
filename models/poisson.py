@@ -9,6 +9,8 @@ from models.lee_carter import LeeCarterModel
 from core.commons import validate_value_column, ParameterContainer
 import config
 
+
+#TODO: Needs the lee-miller-fix implementation
 class PoissonModel(Model):
     def __init__(
         self, 

@@ -21,3 +21,5 @@ PLOTTING_LABELS = {
     AGE_DIM: "x",
     YEAR_DIM: "t"
 }
+
+INFO_INDENT = " " * 5

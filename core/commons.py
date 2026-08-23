@@ -1,7 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Iterator
 from itertools import chain
-
 import xarray as xr
 
 import config
@@ -16,7 +15,7 @@ def validate_value_column(value_column: str) -> None:
             f"try one of the following: {config.VALUE_COLUMNS}"
         )
 
-
+# TODO: maybe add an .info() method, that prints out information
 @dataclass
 class ParameterContainer:
     """A container class for sorting parameters into 3 different groups,
@@ -35,25 +34,36 @@ class ParameterContainer:
     period: xr.Dataset
     cohort: xr.Dataset | None = None
 
-    def __iter__(self) -> Iterator[str]:
-        return chain.from_iterable([
-            ds for ds in (self.static, self.period, self.cohort) 
-            if ds is not None
-        ])
-
-    def __len__(self) -> int:
-        return sum(
-            len(ds) for ds in (self.static, self.period, self.cohort)
-            if ds is not None 
+    @property
+    def _datasets(self) -> tuple[xr.Dataset, ...]:
+        return tuple(
+            ds for field in fields(self)
+            if (ds := getattr(self, field.name)) is not None
         )
 
-    def __getitem__(self, parameter: str):
-        for ds in (self.static, self.period, self.cohort):
-            if ds is not None and parameter in ds:
-                return ds[parameter]
+    def __iter__(self) -> Iterator[str]:
+        return chain.from_iterable(self._datasets)
 
-        raise KeyError(f"Parameter '{parameter}' not found in the parameter container.")
+    def __len__(self) -> int:
+        return sum(len(ds) for ds in self._datasets)
 
+    def __getitem__(self, parameter_selection: str) -> xr.DataArray:
+        for ds in self._datasets:
+            if parameter_selection in ds:
+                return ds[parameter_selection]
+
+        raise KeyError(f"Parameter '{parameter_selection}' not found.")
+
+    def info(self) -> None:
+        for field in fields(self):
+            ds = getattr(self, field.name)
+            print(f"{field.name} parameters:")
+            if ds is None:
+                print(f"{config.INFO_INDENT}empty")
+            else:
+                for parameter in ds:
+                    print(f"{config.INFO_INDENT}['{parameter}'] with {ds.coords}")
+                
 @dataclass
 class ForecastContainer:
     """A container class for forecasted parameters along with the mortality,
