@@ -23,10 +23,8 @@ class ModelPlotter(Plotter):
             axs_needed=len(self.model.parameters_)
         )
 
-        for i, parameter in enumerate(
-            self.model.parameters_
-        ):
-            parameter_da = getattr(self.model, parameter)
+        for i, parameter in enumerate(self.model.parameters_):
+            parameter_da = self.model.parameters_[parameter]
             x_dim = parameter_da.dims[0]
             x_axis = parameter_da.coords[x_dim].values
 

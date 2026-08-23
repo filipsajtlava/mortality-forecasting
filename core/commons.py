@@ -37,16 +37,22 @@ class ParameterContainer:
 
     def __iter__(self) -> Iterator[str]:
         return chain.from_iterable([
-            sub for sub in (self.static, self.period, self.cohort) 
-            if sub is not None
+            ds for ds in (self.static, self.period, self.cohort) 
+            if ds is not None
         ])
 
     def __len__(self) -> int:
         return sum(
-            len(sub) for sub in (self.static, self.period, self.cohort)
-            if sub is not None 
+            len(ds) for ds in (self.static, self.period, self.cohort)
+            if ds is not None 
         )
 
+    def __getitem__(self, parameter: str):
+        for ds in (self.static, self.period, self.cohort):
+            if ds is not None and parameter in ds:
+                return ds[parameter]
+
+        raise KeyError(f"Parameter '{parameter}' not found in the parameter container.")
 
 @dataclass
 class ForecastContainer:
