@@ -5,23 +5,19 @@ import xarray as xr
 
 from data_downloading.datasets import MortalityDataset
 from core.base_model import Model
-from plotting.model_plot import ModelPlotter
-from core.commons import validate_value_column
+from core.commons import validate_value_column, ParameterContainer
 import config
 
 class LeeCarterModel(Model):
-    # TODO: add simulations to the __init__
     def __init__(
             self,
-            lee_miller_fix: bool = False,
-            seed: int | np.random.Generator | None = None
+            lee_miller_fix: bool = False
         ) -> None:
-        super().__init__(lee_miller_fix=lee_miller_fix, seed=seed)
+        super().__init__(lee_miller_fix=lee_miller_fix)
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
         """Fit the Lee-Carter model using SVD.
         """
-        self._validate_hyperparameters()
         validate_value_column(value_column)
         required_grids = ("M", )
         self._validate_dataset(
@@ -31,7 +27,6 @@ class LeeCarterModel(Model):
 
         self.mortality_data = mortality_data
         self.value_column = value_column
-        self.overlap_step = 0 if self.mortality_data.M.overlap else 1
 
         log_M = np.log(self.mortality_data.M[self.value_column])
 
@@ -55,77 +50,33 @@ class LeeCarterModel(Model):
             coords=[(config.YEAR_DIM, log_M[config.YEAR_DIM].values)]
         )
 
-        self.parameters_ = xr.Dataset(
-            data_vars={
-                "ax": self.ax_,
-                "bx": self.bx_,
-                "kt": self.kt_
-            }
+        self.parameters_ = ParameterContainer(
+            static=xr.Dataset(
+                data_vars={
+                    "ax": self.ax_,
+                    "bx": self.bx_
+                }
+            ),
+            period=xr.Dataset(
+                data_vars={
+                    "kt": self.kt_
+                },                
+                attrs={
+                    "overlap": self.mortality_data.M.overlap,
+                    "last_year": self.mortality_data.M.year_interval["end"]
+                }
+            )
         )
 
         self.explained_variance_ = s[0]**2 / np.sum(s**2)
-        self.drift_ = float(self.kt_[-1] - self.kt_[0]) / (len(self.kt_) - 1)
-        self.std_of_errors_ = np.std(np.diff(self.kt_) - self.drift_)
         return self
 
-    @property
-    def plot(self) -> ModelPlotter:
-        return ModelPlotter(self)
-
-    def forecast_kt(self, steps: int, simulations: int) -> xr.DataArray:
-        """Simulate and forecast the stochastic walk of the kt parameter.
-        """
-        rng = self._normalize_seed()
-        innovations = rng.normal(
-            self.drift_, self.std_of_errors_, size=(steps, simulations)
+    def _predict_mortalities(
+            self, 
+            forecasted_values: ParameterContainer
+        ) -> xr.DataArray:
+        log_M_predictions = (
+            forecasted_values.static.ax + 
+            forecasted_values.static.bx * forecasted_values.period.kt
         )
-        innovations = np.insert(innovations, 0, 0, axis=0)    
-        kt_forecast = self.kt_[-1].values + np.cumsum(innovations, axis=0)
-        last_year = self.mortality_data.M.year_interval["end"]
-        pred_years = np.arange(self.overlap_step, steps + 1) + last_year
-
-        return xr.DataArray(
-            kt_forecast[self.overlap_step:],
-            coords=[pred_years, np.arange(1, simulations + 1)],
-            dims=[config.YEAR_DIM, config.SIMULATION_DIM],
-            name="kt_forecast"
-        )
-    
-    def forecast_kt_analytical(self, steps: int) -> xr.DataArray:
-        """Forecast the values of the kt parameter analytically.
-        """
-        drifts = np.repeat(self.drift_, steps)
-        drifts = np.insert(drifts, 0, 0)
-        kt_forecast = self.kt_[-1].values + np.cumsum(drifts, axis=0)
-
-        last_year = self.mortality_data.M.year_interval["end"]
-        pred_years = np.arange(self.overlap_step, steps + 1) + last_year
-
-        return xr.DataArray(
-            kt_forecast[self.overlap_step:],
-            coords=[pred_years],
-            dims=[config.YEAR_DIM],
-            name="kt_forecast_analytical"
-        )
-
-    def predict(self, steps: int, simulations: int = 1, stochastic: bool = True) -> xr.DataArray:
-        """Predict the future mortality values.
-        """
-        if not stochastic and simulations > 1:
-            simulations_warning = "WARNING: setting simulations to a higher number " \
-            "than one while using analytical forecasts is without effect."
-            print(simulations_warning)
-
-        if stochastic:
-            kt_preds = self.forecast_kt(steps, simulations)
-            output_data_name = "M_forecast"
-        else:
-            kt_preds = self.forecast_kt_analytical(steps)
-            output_data_name = "M_forecast_analytical"
-
-        ages = self.mortality_data.M[self.value_column].coords[config.AGE_DIM].values
-        log_M_preds = self.ax_ + self.bx_ * kt_preds
-        return np.exp(log_M_preds).rename(output_data_name)
-
-    def predict_mortality(self) -> xr.DataArray:
-        return np.exp(self.ax_ + self.bx_ * self.kt_)
+        return np.exp(log_M_predictions)

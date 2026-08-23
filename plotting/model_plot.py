@@ -16,18 +16,19 @@ class ModelPlotter(Plotter):
             ax: Sequence[Axes] | None = None,
             plot_config: dict[str, Sequence[Any] | Any] = None
         ) -> list[Axes]:
-        self._check_if_fitted()
+        self.model._check_if_fitted()
         axs, plot_config = self._validate_inputs(
             ax, 
             plot_config, 
             axs_needed=len(self.model.parameters_)
         )
 
-        for i, (parameter, data_array) in enumerate(
-            self.model.parameters_.items()
+        for i, parameter in enumerate(
+            self.model.parameters_
         ):
-            x_dim = data_array.dims[0]
-            x_axis = data_array.coords[x_dim].values
+            parameter_da = getattr(self.model, parameter)
+            x_dim = parameter_da.dims[0]
+            x_axis = parameter_da.coords[x_dim].values
 
             individual_ax_config = {}
             if plot_config is not None:
@@ -38,7 +39,7 @@ class ModelPlotter(Plotter):
             if "label" not in individual_ax_config:
                 individual_ax_config["label"] = self.model.value_column
                     
-            axs[i].plot(x_axis, data_array, **individual_ax_config)
+            axs[i].plot(x_axis, parameter_da, **individual_ax_config)
             axs[i].set(
                 xlabel=f"{x_dim} {config.PLOTTING_LABELS[x_dim]}",
                 ylabel=f"Parameter {parameter}"
@@ -51,7 +52,7 @@ class ModelPlotter(Plotter):
             ax: Axes | None = None,
             plot_config: dict[str, Sequence[Any] | Any] = None
         ) -> Axes:
-        self._check_if_fitted()
+        self.model._check_if_fitted()
         ax, plot_config = self._validate_inputs(
             ax,
             plot_config, 
@@ -59,7 +60,7 @@ class ModelPlotter(Plotter):
         )
         
         actual = self.model.mortality_data.M[self.model.value_column]
-        predicted = self.model.predict_mortality()
+        predicted = self.model.predict_in_sample()
         residuals = (actual - predicted) / np.sqrt(predicted)
 
         x_axis_ages = residuals.coords[config.AGE_DIM]
@@ -92,7 +93,7 @@ class ModelPlotter(Plotter):
             ax: Axes | None = None,
             plot_config: dict[str, Sequence[Any] | Any] = None
         ):
-        self._check_if_fitted()
+        self.model._check_if_fitted()
         ax, plot_config = self._validate_inputs(
             ax,
             plot_config, 
@@ -104,7 +105,7 @@ class ModelPlotter(Plotter):
             .sel({config.YEAR_DIM: year})
         )
         predicted = np.log(
-            self.model.predict_mortality()
+            self.model.predict_in_sample()
             .sel({config.YEAR_DIM: year})
         )
         x_axis_ages = actual.coords[config.AGE_DIM].values
@@ -137,7 +138,7 @@ class ModelPlotter(Plotter):
             plot_config: dict[str, Sequence[Any] | Any] = None,
             central_line: bool = True
         ) -> Axes:
-        self._check_if_fitted()
+        self.model._check_if_fitted()
         ax, plot_config = self._validate_inputs(
             ax, 
             plot_config, 
@@ -145,7 +146,7 @@ class ModelPlotter(Plotter):
         )
 
         actual = self.model.mortality_data.M[self.model.value_column]
-        predicted = self.model.predict_mortality()
+        predicted = self.model.predict_in_sample()
 
         max_value = max(actual.max(), predicted.max())
         min_value = min(actual.min(), predicted.min())
@@ -176,7 +177,6 @@ class ModelPlotter(Plotter):
             additional_grids_required: tuple[str] | None = None,
             axs_needed: int = 1
         ) -> tuple[list[Axes] | Axes, dict[str, Sequence[Any] | Any]]:
-        self._check_if_fitted()
         ax = self._validate_and_normalize_axs(axes_user_input, axs_needed)
         plot_config = self._validate_and_extrapolate_config(plot_config, axs_needed)
 

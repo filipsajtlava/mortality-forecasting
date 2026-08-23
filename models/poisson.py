@@ -6,20 +6,13 @@ import xarray as xr
 from data_downloading.datasets import MortalityDataset
 from core.base_model import Model
 from models.lee_carter import LeeCarterModel
-from plotting.model_plot import ModelPlotter
-from core.commons import validate_value_column
+from core.commons import validate_value_column, ParameterContainer
 import config
 
 class PoissonModel(Model):
-    _PARAM_CHOICES = {
-        **Model._PARAM_CHOICES,
-        "initialization": ("naive", "SVD")
-    }
-
     def __init__(
         self, 
         lee_miller_fix: bool = False,
-        seed: int | np.random.Generator | None = None,
         initialization: Literal["naive", "SVD"] = "naive",
         iterator_epsilon: float = 10e-9,
         verbose: bool = False
@@ -27,10 +20,9 @@ class PoissonModel(Model):
         self.iterator_epsilon = iterator_epsilon
         self.initialization = initialization
         self.verbose = verbose
-        super().__init__(lee_miller_fix=lee_miller_fix, seed=seed)
+        super().__init__(lee_miller_fix=lee_miller_fix)
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
-        self._validate_hyperparameters()
         validate_value_column(value_column)
         required_grids = ("E", "D") if self.initialization == "naive" else ("E", "D", "M")
         self._validate_dataset(
@@ -77,24 +69,34 @@ class PoissonModel(Model):
                 f"so the algorithm might not have converged."
             )
 
-        self.ax_ = ax
-        self.bx_ = bx
-        self.kt_ = kt
-        self.parameters_ = xr.Dataset(
-            data_vars={
-                "ax": self.ax_,
-                "bx": self.bx_,
-                "kt": self.kt_
-            }
+        self.parameters_ = ParameterContainer(
+            static=xr.Dataset(
+                data_vars={
+                    "ax": ax, 
+                    "bx": bx
+                }
+            ),
+            period=xr.Dataset(
+                data_vars={
+                    "kt": kt
+                },                
+                attrs={
+                    "overlap": self.mortality_data.E.overlap,
+                    "last_year": self.mortality_data.E.year_interval["end"]
+                }
+            )
         )
         return self
 
-    @property
-    def plot(self) -> ModelPlotter:
-        return ModelPlotter(self)
-
-    def predict_mortality(self) -> xr.DataArray:
-        return np.exp(self.ax_ + self.bx_ * self.kt_)
+    def _predict_mortalities(
+            self, 
+            forecasted_values: ParameterContainer
+        ) -> xr.DataArray:
+        log_M_predictions = (
+            forecasted_values.static.ax + 
+            forecasted_values.static.bx * forecasted_values.period.kt
+        )
+        return np.exp(log_M_predictions)
 
     def _initialize_parameters(
             self
@@ -109,7 +111,8 @@ class PoissonModel(Model):
             ax = xr.DataArray(0, coords=[(config.AGE_DIM, ages)])
             bx = xr.DataArray(0, coords=[(config.AGE_DIM, ages)])
             kt = xr.DataArray(1, coords=[(config.YEAR_DIM, years)])
-
+        else:
+            raise ValueError("The selected initialization method is incorrect.")
         return (ax, bx, kt)
 
     def _get_new_alpha(
@@ -163,6 +166,3 @@ class PoissonModel(Model):
             self.D * (ax + bx * kt) - self.E * np.exp(ax + bx * kt)
         )
         return float(log_likelihood.sum())
-
-    def predict(self, steps: int, simulations: int = 1) -> xr.DataArray:
-        return steps
