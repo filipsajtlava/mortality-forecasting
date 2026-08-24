@@ -1,87 +1,56 @@
+from typing import Literal
+
 import xarray as xr
 import numpy as np
-from data_downloading._grid import DemographicGrid
-from core.base_model import Model
 
-# TODO: I was thinking about implementing an approach that only need you to select the mean/median
-# for the MC aggregation, and after that, all of the 3 errors would automatically calculate and 
-# save into the instance. To access them you would use the dot notation, e.g. .MASE
-# This way you could have .MASE.ind - to get the individual MASE rates for every age instead
-# of having to get the total mase yourself by taking the mean.
+import config
 
-# TODO: needs redesigning to comply with the new DemographicGrids and MortalityDatasets 
-
-class MortalityEvaluator:
+class ForecastEvaluator:
     def __init__(
             self, 
-            model_fitted: Model, 
-            testing_data: DemographicGrid, 
-            simulations: int
+            actual: xr.DataArray,
+            forecast: xr.DataArray,
+            aggregation: Literal["median", "mean"] = "median"
         ):
-        """Initialize the evaluator to compare model projections against testing data.
+        self.actual = actual
+        self.forecast = forecast
+        self.aggregation = aggregation
 
-        Parameters
-        ----------
-        model_fitted
-            The fitted mortality model instance.
-        testing_data
-            The observed data used for validation.
-        simulations 
-            Number of stochastic trajectories to generate.
+    def _get_aggregates(self) -> xr.DataArray:
+        if config.SIMULATION_DIM not in self.forecast.dims:
+            return self.forecast
 
-        Raises
-        ------
-        ValueError
-            If the model has not been fitted or is missing required parameters.
-        """
-        self.model = model_fitted
-        self.testing_data = testing_data
-        self.simulations = simulations
-        self.value_column = self.model.value_column
+        if self.aggregation == "mean":
+            agg_forecast = self.forecast.mean(dim=config.SIMULATION_DIM)
+        elif self.aggregation == "median":
+            agg_forecast = self.forecast.median(dim=config.SIMULATION_DIM)
+        else:
+            raise ValueError(f"Selected method '{self.aggregation}' isn't allowed.")
+        return agg_forecast
 
-        # TODO: THIS NEEDS REDESIGNING FOR OTHER MODELS WHEN THEY ARE GOING TO USE SOMETHING OTHER THAN ax
-        if not hasattr(self.model, "ax") or self.model.ax is None:
-            raise ValueError("You need to fit the model first.")
-
-        self.predicted_data = self._calculate_predictions()
-
-    def _calculate_predictions(self) -> None:
-        """Calculates the predictions for the period of the testing data using the fitted model.
-        """
-        self.years_to_predict = (
-            self.testing_data.year_interval["end"] - \
-            self.model.mortality_dataclass.year_interval["end"]
-        )
-        return self.model.predict(steps=self.years_to_predict, simulations=self.simulations)
-
-    def _calculate_MAE(self) -> float:
+    def mae(self) -> float:
         """Calculates the MAE of aggregated predictions and the test set
 
         Returns
         -------
             MAE error.
         """
-        abs_percent_errors = np.abs(
-            self.testing_data.get_pivoted_data(self.value_column) - self.agg_predictions
-        )
-        
-        return float(abs_percent_errors.mean())
+        agg_forecast = self._get_aggregates()
+        abs_errors = np.abs(self.actual - agg_forecast)
+        return float(abs_errors.mean())
 
-    def _calculate_RMSE(self) -> float:
-        """Calculates the RMSE of aggregated predictions and the test set
+    def log_rmse(self) -> float:
+        """Calculates the log-RMSE of aggregated predictions and the test set
 
         Returns
         -------
             RMSE error.
         """
-        squared_errors = (
-            np.log(self.agg_predictions) - \
-            np.log(self.testing_data.get_pivoted_data(self.value_column))
-        ) ** 2
-
+        agg_forecast = self._get_aggregates()
+        squared_errors = (np.log(agg_forecast) - np.log(self.actual)) ** 2
         return float(np.sqrt(squared_errors.mean()))    
 
-    def _calculate_MASE(self) -> xr.DataArray:
+    def mase(self, training: xr.DataArray) -> xr.DataArray:
         """Calculates the MASE of aggregated predictions and the test set
         for individual ages
 
@@ -89,16 +58,17 @@ class MortalityEvaluator:
         -------
             MASE error.
         """
-        abs_mean_error_preds = np.abs(
-            self.testing_data.get_pivoted_data(self.value_column) - \
-            self.agg_predictions
-        ).mean(dim="Year")
-        training_set = self.model.wide_matrix
-        training_diff_error = np.abs(training_set.diff(dim="Year")).mean(dim="Year")
-        # TODO: is it correct for it to return an xarray? wouldn't a numpy array be better?
-        return abs_mean_error_preds / training_diff_error
+        agg_forecast = self._get_aggregates()
+        abs_mean_errors = np.abs(
+            self.actual - agg_forecast
+        ).mean(dim=config.YEAR_DIM)
+
+        training_diff_error = np.abs(
+            training.diff(dim=config.YEAR_DIM)
+        ).mean(dim=config.YEAR_DIM)
+        return abs_mean_errors / training_diff_error
     
-    def _calculate_MSEr(self) -> xr.DataArray:
+    def mser(self, training: xr.DataArray) -> xr.DataArray:
         """Calculates the MSEr of aggregated predictions and the test set
         for individual ages (MASE without the absolute value)
 
@@ -106,62 +76,12 @@ class MortalityEvaluator:
         -------
             MSEr error.
         """
+        agg_forecast = self._get_aggregates()
         mean_error_preds = (
-            self.testing_data.get_pivoted_data(self.value_column) - \
-            self.agg_predictions
-        ).mean(dim="Year")
-        training_set = self.model.wide_matrix
-        training_diff_error = np.abs(training_set.diff(dim="Year")).mean(dim="Year")
-        # TODO: is it correct for it to return an xarray? wouldn't a numpy array be better?
+            self.actual - agg_forecast
+        ).mean(dim=config.YEAR_DIM)
+
+        training_diff_error = np.abs(
+            training.diff(dim=config.YEAR_DIM)
+        ).mean(dim=config.YEAR_DIM)
         return mean_error_preds / training_diff_error
-    
-    def calculate_error(
-            self, 
-            aggregate: str = "mean", 
-            error: str = None, 
-            start_year: int = None
-        ) -> xr.DataArray:
-        """Compute the difference between observed and predicted mortality values.
-
-        Parameters
-        ----------
-        method, optional
-            Aggregation method for simulations ("mean" or "median"), by default "mean".
-
-        Returns
-        -------
-            The specified error.
-
-        Raises
-        ------
-        ValueError
-            Incorrectly specified method for aggregating or incorrectly specified error.
-        """
-        aggregate_methods = ["mean", "median"]
-        
-        error_methods = {
-            "MAE": self._calculate_MAE,
-            "RMSE": self._calculate_RMSE,
-            "MASE": self._calculate_MASE,
-            "MSEr": self._calculate_MSEr
-        }
-
-        if aggregate in aggregate_methods:
-            if aggregate == "mean":
-                self.agg_predictions = self.predicted_data.mean(dim="Simulation")
-            elif aggregate == "median":
-                self.agg_predictions = self.predicted_data.median(dim="Simulation")
-        else:
-            error_message =  f"Selected method '{aggregate}' isn't allowed. Choose one from {aggregate_methods}"
-            raise ValueError(error_message)
-
-        # TODO: why exactly is this here? 
-        if start_year is not None:
-            self.agg_predictions = self.agg_predictions.sel(Year=slice(start_year, None))
-
-        if error in error_methods.keys():
-            return error_methods[error]()
-        else:
-            error_message = f"Selected error '{error}' is not allowed. Choose one from {error_methods}"
-            raise ValueError(error_message)
-        

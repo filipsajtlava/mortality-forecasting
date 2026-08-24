@@ -168,6 +168,7 @@ class ModelPlotter(Plotter):
         )
         return ax
 
+    # TODO: think about moving these into the parent class, if possible
     def _validate_inputs(
             self, 
             axes_user_input: Sequence[Axes] | Axes | None, 

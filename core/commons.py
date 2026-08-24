@@ -15,7 +15,6 @@ def validate_value_column(value_column: str) -> None:
             f"try one of the following: {config.VALUE_COLUMNS}"
         )
 
-# TODO: maybe add an .info() method, that prints out information
 @dataclass
 class ParameterContainer:
     """A container class for sorting parameters into 3 different groups,

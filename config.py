@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 DATA_DIRECTORY_NAME = "hmd_data"
 STALE_FALLBACK_COUNTRY_AVAILABLE = "supported_countries_fallback.json"
 CACHED_COUNTRY_AVAILABLE = "countries_available.json"
