@@ -114,7 +114,8 @@ class Model(ABC):
     def _validate_dataset(
             self, 
             mortality_data: MortalityDataset, 
-            required_grids: list[str]
+            required_grids: list[str],
+            value_column: str
         ) -> None:
         """Check if the specified datasets are present in the MortalityDataset
         instance (models themselves dictate what they want to check). 
@@ -143,6 +144,15 @@ class Model(ABC):
                     f"not available in the mortality data."
                 )
 
+            try:
+                selected_grid[value_column]
+            except:
+                raise ValueError(
+                    "The selected column is not available in the dataset."
+                )
+
+        # TODO: this year-interval mismatch checker could be moved to commons,
+        # and maybe used in the manual loader, to look if the years are the same
         if len(required_grids) > 1:
             reference_year_interval = getattr(
                 mortality_data, 

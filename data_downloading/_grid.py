@@ -6,7 +6,7 @@ import numpy as np
 import xarray as xr
 
 import config
-
+from core.commons import validate_value_column
 
 class DemographicGrid:
     def __init__(
@@ -97,20 +97,20 @@ class DemographicGrid:
 
 class DemographicGridLoader:
     @classmethod
-    def load_from_file(
+    def load_from_cached_file(
             cls,
             full_path: Path,
             starting_year: int,
             ending_year: int,
             maximum_age: int
         ) -> DemographicGrid:
-        """Loads the data from .csv format with specified year intervals
+        """Loads the data from .txt format with specified year intervals
         and a maximum possible age and then preprocesses it.
         
         Parameters
         ----------
         full_path
-            Path to the cached .csv file.
+            Path to the cached .txt file.
         starting_year
             First year included in the time frame.
         ending_year
@@ -138,11 +138,72 @@ class DemographicGridLoader:
         return DemographicGrid(preprocessed_data)
 
     @classmethod
+    def manual_load_from_file(
+            cls,
+            input_dict: dict[str, str | Path | pd.DataFrame],
+            preprocessing: bool
+        ) -> DemographicGrid:
+        dataframe_dict = cls._normalize_manual_input(input_dict)
+        long_formats_to_concatenate = []
+        for value_column, dataframe in dataframe_dict.items():
+            series_long = (
+                dataframe
+                .stack(future_stack=True)
+                .rename_axis(index=[config.AGE_DIM, config.YEAR_DIM])
+                .rename(value_column)
+            )
+            long_formats_to_concatenate.append(series_long)
+
+        cls._check_identical_age_year_structure(long_formats_to_concatenate)
+        data = pd.concat(long_formats_to_concatenate, axis=1).reset_index()
+        data[[config.AGE_DIM, config.YEAR_DIM]] = (
+            data[[config.AGE_DIM, config.YEAR_DIM]].astype(int)
+        )
+
+        if preprocessing:
+            data = cls.preprocessing(data)
+        return DemographicGrid(data=data)
+
+    @classmethod
+    def _normalize_manual_input(
+            cls,
+            input_dict: dict[str, str | Path | pd.DataFrame]
+        ) ->  dict[str, pd.DataFrame]:
+        normalized = {}
+        for value_column, user_input in input_dict.items():
+            validate_value_column(value_column)
+            if isinstance(user_input, (str, Path)):
+                user_input = Path(user_input)
+                if user_input.suffix == ".csv":
+                    dataset = pd.read_csv(user_input, index_col=0)
+                else:
+                    raise ValueError(
+                        "Please enter a valid path to a '.csv' file."
+                    )
+                normalized[value_column] = dataset
+            else:
+                normalized[value_column] = user_input
+        return normalized
+
+    @classmethod
+    def _check_identical_age_year_structure(
+        cls,
+        datasets: list[pd.Series]
+    ) -> None:
+        reference_dataset = datasets[0]
+        for dataset in datasets[1:]:
+            if not reference_dataset.index.equals(dataset.index):
+                raise ValueError(
+                    f"The supplied data has different {config.AGE_DIM} and/or " 
+                    f"{config.YEAR_DIM} dimensions."
+                )    
+
+    @classmethod
     def preprocessing(
             cls, 
             raw_df: pd.DataFrame
         ) -> pd.DataFrame:
-        """Preprocessing of the loaded HMD .csv files using interpolation 
+        """Preprocessing of the loaded HMD .txt files using interpolation 
         and filling empty values with very small numbers which allow
         for using logarithms.
 
@@ -155,7 +216,9 @@ class DemographicGridLoader:
         -------
             Preprocessed dataset.
         """
-        target_columns = config.VALUE_COLUMNS.copy()
+        target_columns = list(
+            set(config.VALUE_COLUMNS).intersection(raw_df.columns)
+        )
         df = raw_df.copy()
 
         df[target_columns] = df[target_columns].where(

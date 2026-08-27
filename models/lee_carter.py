@@ -22,7 +22,8 @@ class LeeCarterModel(Model):
         required_grids = ("M", )
         self._validate_dataset(
             mortality_data=mortality_data,
-            required_grids=required_grids
+            required_grids=required_grids,
+            value_column=value_column
         )
 
         self.mortality_data = mortality_data

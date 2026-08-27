@@ -4,16 +4,8 @@ library(here)
 library(jsonlite)
 library(stringr)
 
-data_dir <- here("tests", "benchmarks", "data")
-output_dir <- here("tests", "benchmarks", "outputs")
-
-data(EWMaleData)
-write.csv(EWMaleData$Dxt, file.path(data_dir, "GBRTENW_Deaths.csv"))
-write.csv(EWMaleData$Ext, file.path(data_dir, "GBRTENW_Exposures.csv"))
-write.csv(
-    EWMaleData$Dxt / EWMaleData$Ext, 
-    file.path(data_dir, "GBRTENW_Mortalities.csv")
-)
+data_dir <- here("tests", "model_benchmarks", "data")
+output_dir <- here("tests", "model_benchmarks", "outputs")
 
 data_files <- list.files(data_dir)
 available_countries <- unique(str_match(data_files, "^(.+)_")[, 2])
@@ -56,7 +48,7 @@ for (country_code in available_countries) {
 
     write_json(
         estimated_parameters, 
-        file.path(output_dir, paste0(country_code, "_estimated_params.json")), 
+        file.path(output_dir, paste0(country_code, "_estimated_params_poisson.json")), 
         pretty = TRUE
     )
 }

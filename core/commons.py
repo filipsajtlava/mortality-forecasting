@@ -6,12 +6,10 @@ import xarray as xr
 import config
 
 
-# TODO: I dont really know why this is here and not in the base model?
-# maybe I was expecting it to be used somewhere else aswell
 def validate_value_column(value_column: str) -> None:
     if value_column not in config.VALUE_COLUMNS:
         raise ValueError(
-            f"The selected value column is unavailable, " \
+            f"The selected value column '{value_column}' is unavailable, " \
             f"try one of the following: {config.VALUE_COLUMNS}"
         )
 

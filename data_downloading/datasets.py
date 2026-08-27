@@ -1,6 +1,8 @@
 from typing import Self
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from data_downloading._hmd_data_fetcher import DataFetcherHMD
 from data_downloading._grid import DemographicGridLoader
@@ -39,7 +41,7 @@ class MortalityDataset:
 
         for metric in config.FILE_SELECTION_COUNTRY_DATA.keys():
             if metric in successfully_loaded:
-                new_demo_grid = DemographicGridLoader.load_from_file(
+                new_demo_grid = DemographicGridLoader.load_from_cached_file(
                     successfully_loaded[metric],
                     starting_year,
                     ending_year,
@@ -50,8 +52,6 @@ class MortalityDataset:
                     metric,
                     new_demo_grid
                 )
-            else:
-                print(f"WARNING: metric {metric} could not be loaded.")
         return self
 
     def train_test_split(
@@ -75,13 +75,12 @@ class MortalityDataset:
             A tuple of the two MortalityDataset instances, 
             with the training one being first.
         """
-        if not hasattr(self, "_data_fetcher"):
-            raise ValueError("Cannot split dataset, no data has been loaded yet.")
-
         train_ds = MortalityDataset(self.country_code)
         test_ds = MortalityDataset(self.country_code)
-        train_ds._initialize_and_validate()
-        test_ds._initialize_and_validate()
+
+        for metric in config.FILE_SELECTION_COUNTRY_DATA.keys():
+            setattr(train_ds, metric, None)
+            setattr(test_ds, metric, None)
 
         for metric in config.FILE_SELECTION_COUNTRY_DATA.keys():
             demo_grid = getattr(self, metric, None)
@@ -119,6 +118,44 @@ class MortalityDataset:
                 )
             else:
                 print(f"{config.INFO_INDENT}Currently not loaded.")
+
+    # TODO: this needs a comprehensive docstring explaining how the .csv files should
+    # look, in the case that the Path appraoch is chosen - first column index Age
+    # and names of columns are individual years
+    # Maybe adding a quick example would be a good choice, like an actual table
+    # TODO: this entire datasets.py file is completely modular, with the inputs
+    # depending on the config file and the FILE SELECTION COUNTRY DATA
+    # this was done in the case of anything being added, as it allows for streamlining
+    # new grids. If nothing else is going to be used, this approach can be scrapped,
+    # instead using hardcoded E, D and M matrices, which are much more friendly for the user
+    @classmethod
+    def load_from_files(
+            cls,
+            preprocessing: bool = True,
+            **kwargs: dict[str, str | Path | pd.DataFrame] | None
+        ) -> Self:
+        valid_metrics = list(config.FILE_SELECTION_COUNTRY_DATA.keys())
+        invalid_input_keys = set(kwargs.keys()) - set(valid_metrics)
+        if invalid_input_keys:
+            raise ValueError(
+                f"Invalid metric(s) provided: {list(invalid_input_keys)}. "
+                f"Select one or more of the following: {valid_metrics}"
+            )
+        if not kwargs:
+            raise ValueError(
+                f"At least one metric matrix must be provided. Options: {valid_metrics}"
+            )
+
+        dataset_instance = cls(country_code="CUSTOM")
+        for metric in valid_metrics:
+            setattr(dataset_instance, metric, None)
+            if metric in kwargs and kwargs[metric] is not None:
+                new_demo_grid = DemographicGridLoader.manual_load_from_file(
+                    kwargs[metric], 
+                    preprocessing
+                )
+                setattr(dataset_instance, metric, new_demo_grid)
+        return dataset_instance
 
     def _initialize_and_validate(self) -> None:
         """Initializes the HMD data fetcher in the case that it was not initialized
