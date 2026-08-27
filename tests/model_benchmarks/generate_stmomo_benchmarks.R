@@ -48,7 +48,7 @@ for (country_code in available_countries) {
 
     write_json(
         estimated_parameters, 
-        file.path(output_dir, paste0(country_code, "_estimated_params_poisson.json")), 
+        file.path(output_dir, paste0(country_code, "_est_params_poisson.json")), 
         pretty = TRUE
     )
 }

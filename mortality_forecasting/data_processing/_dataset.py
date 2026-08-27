@@ -4,9 +4,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from data_downloading._hmd_data_fetcher import DataFetcherHMD
-from data_downloading._grid import DemographicGridLoader
-import config
+from ._hmd_data_fetcher import DataFetcherHMD
+from ._grid import DemographicGridLoader
+from mortality_forecasting import config
 
 
 class MortalityDataset:

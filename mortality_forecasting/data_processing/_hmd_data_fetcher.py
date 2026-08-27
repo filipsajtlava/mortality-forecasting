@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 import pandas as pd
 import requests
 
-import config
+from mortality_forecasting import config
+
 
 class DataFetcherHMD:
     def __init__(self, country_code: str) -> None:

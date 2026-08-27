@@ -3,10 +3,14 @@ from typing import Self
 
 import xarray as xr
 
-from data_downloading.datasets import MortalityDataset
-from core.base_forecaster import Forecaster, DualForecaster
-from core.commons import ForecastContainer, ParameterContainer
-from plotting.model_plot import ModelPlotter
+from mortality_forecasting.data_processing._dataset import MortalityDataset
+from mortality_forecasting.forecasting._dual_forecaster import DualForecaster
+from ._base_forecaster import Forecaster
+from ._commons import (
+    ForecastContainer, 
+    ParameterContainer
+)
+from mortality_forecasting.plotting._model_plot import ModelPlotter
 
 
 class Model(ABC):

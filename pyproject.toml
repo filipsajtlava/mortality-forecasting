@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mortality-forecasting"
+version = "0.1.0"
+description = "Demographic mortality modeling and forecasting library"
+authors = [{ name = "Filip Sajtlava" }]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.4.2",
+    "pandas>=3.0.0",
+    "matplotlib>=3.10.8",
+    "requests>=2.32.5",
+    "xarray>=2026.2.0",
+    "lxml>=6.1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1.1",
+    "ipykernel>=7.2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["mortality_forecasting*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

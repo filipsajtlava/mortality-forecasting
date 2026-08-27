@@ -3,7 +3,8 @@ from typing import Literal
 import xarray as xr
 import numpy as np
 
-import config
+from mortality_forecasting import config
+
 
 class ForecastEvaluator:
     def __init__(

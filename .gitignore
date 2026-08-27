@@ -1,11 +1,6 @@
 hmd_data/
-testing.ipynb
-testing_plot.ipynb
-finished_plots.ipynb
-roadmap.txt
-created_plots/
 .Rhistory
-implementation.txt
+private/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

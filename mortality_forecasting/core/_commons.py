@@ -3,7 +3,7 @@ from typing import Iterator
 from itertools import chain
 import xarray as xr
 
-import config
+from mortality_forecasting import config
 
 
 def validate_value_column(value_column: str) -> None:
@@ -76,5 +76,5 @@ class ForecastContainer:
     cohort, optional
         Forecastes cohort-like parameters, by default None.
     """
-    mortality_rates: xr.DataArray
-    parameters: ParameterContainer
+    mortality_rates_: xr.DataArray
+    parameters_: ParameterContainer

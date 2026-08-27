@@ -4,12 +4,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from models.poisson import PoissonModel
-from data_downloading.datasets import MortalityDataset
+from mortality_forecasting.models import PoissonModel
+from mortality_forecasting.data_processing import MortalityDataset
+
 
 BENCHMARK_DIR = Path(__file__).parent
 INPUTS_DIR = BENCHMARK_DIR / "data"
 OUTPUTS_DIR = BENCHMARK_DIR / "outputs"
+
 
 @pytest.mark.parametrize(
     "dataset_prefix, initialization",

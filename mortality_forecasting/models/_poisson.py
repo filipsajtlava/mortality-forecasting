@@ -3,11 +3,14 @@ from typing import Self, Literal
 import numpy as np
 import xarray as xr
 
-from data_downloading.datasets import MortalityDataset
-from core.base_model import Model
-from models.lee_carter import LeeCarterModel
-from core.commons import validate_value_column, ParameterContainer
-import config
+from mortality_forecasting.data_processing._dataset import MortalityDataset
+from mortality_forecasting.models._lee_carter import LeeCarterModel
+from mortality_forecasting.core._base_model import Model
+from mortality_forecasting.core._commons import (
+    validate_value_column, 
+    ParameterContainer
+)
+from mortality_forecasting import config
 
 
 #TODO: Needs the lee-miller-fix implementation
@@ -109,7 +112,11 @@ class PoissonModel(Model):
 
         if self.initialization == "SVD":
             lc_model = LeeCarterModel().fit(self.mortality_data, self.value_column)
-            return (lc_model.ax_, lc_model.bx_, lc_model.kt_)
+            return (
+                lc_model.parameters_["ax"], 
+                lc_model.parameters_["bx"], 
+                lc_model.parameters_["kt"]
+            )
         elif self.initialization == "naive":
             ax = xr.DataArray(0, coords=[(config.AGE_DIM, ages)])
             bx = xr.DataArray(0, coords=[(config.AGE_DIM, ages)])

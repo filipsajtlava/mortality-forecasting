@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 
-from core.base_plotter import Plotter
-import config
+from mortality_forecasting.core._base_plotter import Plotter
+from mortality_forecasting import config
 
 
 class ModelPlotter(Plotter):

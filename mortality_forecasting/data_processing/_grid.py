@@ -5,8 +5,9 @@ import pandas as pd
 import numpy as np
 import xarray as xr
 
-import config
-from core.commons import validate_value_column
+from mortality_forecasting.core._commons import validate_value_column
+from mortality_forecasting import config
+
 
 class DemographicGrid:
     def __init__(

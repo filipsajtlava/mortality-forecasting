@@ -3,10 +3,14 @@ from typing import Self
 import numpy as np
 import xarray as xr
 
-from data_downloading.datasets import MortalityDataset
-from core.base_model import Model
-from core.commons import validate_value_column, ParameterContainer
-import config
+from mortality_forecasting.data_processing._dataset import MortalityDataset
+from mortality_forecasting.core._base_model import Model
+from mortality_forecasting.core._commons import (
+    validate_value_column, 
+    ParameterContainer
+)
+from mortality_forecasting import config
+
 
 class LeeCarterModel(Model):
     def __init__(

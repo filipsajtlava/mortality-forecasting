@@ -1,8 +1,9 @@
 import numpy as np
 import xarray as xr
 
-from core.base_forecaster import Forecaster
-import config
+from mortality_forecasting.core._base_forecaster import Forecaster
+from mortality_forecasting import config
+
 
 class RandomWalkWithDrift(Forecaster):
     def __init__(
