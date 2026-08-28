@@ -1,4 +1,5 @@
 library(StMoMo)
+library(here)
 
 data_dir <- here("tests", "model_benchmarks", "data")
 

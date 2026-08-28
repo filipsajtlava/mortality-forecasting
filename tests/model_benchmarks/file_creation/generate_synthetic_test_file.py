@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
+
 def generate_synthetic_dataset(
         start_age: int,
         end_age: int,
@@ -31,7 +32,7 @@ def generate_synthetic_dataset(
 
     death_synthetic = exp_synthetic * mortality_synthetic
 
-    save_path = Path(__file__).parent / "data"
+    save_path = Path(__file__).parents[1] / "data"
     exp_synthetic.to_csv(save_path / "SYNTHETIC_Exposures.csv")
     mortality_synthetic.to_csv(save_path / "SYNTHETIC_Mortalities.csv")
     death_synthetic.to_csv(save_path / "SYNTHETIC_Deaths.csv")

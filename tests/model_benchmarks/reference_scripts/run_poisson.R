@@ -1,8 +1,8 @@
 library(StMoMo)
-library(dplyr)
 library(here)
 library(jsonlite)
 library(stringr)
+
 
 data_dir <- here("tests", "model_benchmarks", "data")
 output_dir <- here("tests", "model_benchmarks", "outputs")
@@ -38,12 +38,12 @@ for (country_code in available_countries) {
         class = "StMoMoData"
     )
 
-    lc_model <- lc(link = "log", const = "sum")
-    fit_lc <- fit(lc_model, data = stmomo_data)
+    po_model <- lc(link = "log", const = "sum")
+    fit_po <- fit(lc_model, data = stmomo_data)
     estimated_parameters <- list(
-        ax = as.vector(fit_lc$ax),
-        bx = as.vector(fit_lc$bx),
-        kt = as.vector(fit_lc$kt)
+        ax = as.vector(fit_po$ax),
+        bx = as.vector(fit_po$bx),
+        kt = as.vector(fit_po$kt)
     )
 
     write_json(
