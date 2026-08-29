@@ -23,14 +23,14 @@ for (country_code in available_countries) {
     deaths_mat <- as.matrix(read.csv(
         deaths_path, row.names = 1, check.names = FALSE
     ))
-    expos_mat <- as.matrix(read.csv(
+    exposures_mat <- as.matrix(read.csv(
         exposures_path, row.names = 1, check.names = FALSE
     ))
 
     stmomo_data <- structure(
         list(
             Dxt = deaths_mat,
-            Ext = expos_mat,
+            Ext = exposures_mat,
             ages = as.numeric(rownames(deaths_mat)),
             years = as.numeric(colnames(deaths_mat)),
             type = "central"
@@ -39,11 +39,44 @@ for (country_code in available_countries) {
     )
 
     po_model <- lc(link = "log", const = "sum")
-    fit_po <- fit(lc_model, data = stmomo_data)
+    fit_po <- fit(po_model, data = stmomo_data)
+    forecasts_analytical <- forecast(
+        fit_po, 
+        h = 100, 
+        kt.method = "mrwd", 
+        jumpchoice = "fit",
+        level=95
+    )
+    forecasts_mc <- simulate(
+        fit_po, 
+        nsim = 100000, 
+        h = 100, 
+        kt.method = "mrwd", 
+        jumpchoice = "fit"
+    )
+
     estimated_parameters <- list(
-        ax = as.vector(fit_po$ax),
-        bx = as.vector(fit_po$bx),
-        kt = as.vector(fit_po$kt)
+        parameters = list(
+            ax = as.vector(fit_po$ax),
+            bx = as.vector(fit_po$bx),
+            kt = as.vector(fit_po$kt)
+        ),
+        forecasts = list(
+            analytical = list(
+                kt = list(
+                    lower = as.numeric(forecasts_analytical$kt.f$lower),
+                    point = as.numeric(forecasts_analytical$kt.f$mean),
+                    upper = as.numeric(forecasts_analytical$kt.f$upper)
+                )
+            ),
+            monte_carlo = list(
+                kt = list(
+                    lower = as.numeric(forecasts_mc$kt.f$lower),
+                    point = as.numeric(forecasts_mc$kt.f$mean),
+                    upper = as.numeric(forecasts_mc$kt.f$upper)
+                )
+            )
+        )
     )
 
     write_json(

@@ -51,6 +51,7 @@ class ParameterContainer:
 
         raise KeyError(f"Parameter '{parameter_selection}' not found.")
 
+    # TODO: imo this is reduntant due to the data property being good enough
     def info(self) -> None:
         for field in fields(self):
             ds = getattr(self, field.name)
@@ -60,6 +61,10 @@ class ParameterContainer:
             else:
                 for parameter in ds:
                     print(f"{config.INFO_INDENT}['{parameter}'] with {ds.coords}")
+
+    @property
+    def data(self) -> xr.Dataset:
+        return xr.merge(self._datasets)
                 
 @dataclass
 class ForecastContainer:

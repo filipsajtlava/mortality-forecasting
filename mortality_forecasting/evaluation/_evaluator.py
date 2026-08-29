@@ -11,23 +11,22 @@ class ForecastEvaluator:
             self, 
             actual: xr.DataArray,
             forecast: xr.DataArray,
-            aggregation: Literal["median", "mean"] = "median"
+            point_estimate: Literal["median", "mean"] = "median"
         ):
         self.actual = actual
         self.forecast = forecast
-        self.aggregation = aggregation
+        self.point_estimate = point_estimate
 
-    def _get_aggregates(self) -> xr.DataArray:
-        if config.SIMULATION_DIM not in self.forecast.dims:
-            return self.forecast
-
-        if self.aggregation == "mean":
-            agg_forecast = self.forecast.mean(dim=config.SIMULATION_DIM)
-        elif self.aggregation == "median":
-            agg_forecast = self.forecast.median(dim=config.SIMULATION_DIM)
+    def _get_aggregates(self) -> np.ndarray:
+        if config.BOUND_DIM in self.forecast.dims:
+            clean_data = self.forecast.sel({config.BOUND_DIM: "point"})
+        elif config.SIMULATION_DIM in self.forecast.dims:
+            clean_data = getattr(self.forecast, self.point_estimate)(
+                dim=config.SIMULATION_DIM
+            )
         else:
-            raise ValueError(f"Selected method '{self.aggregation}' isn't allowed.")
-        return agg_forecast
+            clean_data = self.forecast
+        return clean_data.to_numpy()
 
     def mae(self) -> float:
         """Calculates the MAE of aggregated predictions and the test set

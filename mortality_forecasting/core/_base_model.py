@@ -60,24 +60,8 @@ class Model(ABC):
     def forecast(
             self, 
             forecaster: Forecaster | DualForecaster,
-            steps: int, 
-            simulations: int = 1
+            steps: int
         ) -> ForecastContainer:
-
-        param_container = self._forecast_parameters(
-            forecaster, 
-            steps, 
-            simulations
-        )
-        predicted_mortalities = self._predict_mortalities(param_container)
-        return ForecastContainer(predicted_mortalities, param_container)
-
-    def _forecast_parameters(
-            self, 
-            forecaster: Forecaster | DualForecaster,
-            steps: int, 
-            simulations: int = 1
-        ) -> ParameterContainer:
         self._check_if_fitted()
 
         # TODO: I genuinely dislike how this is done, other way of approaching
@@ -87,25 +71,29 @@ class Model(ABC):
         # of the model
         if isinstance(forecaster, Forecaster):
             forecaster.fit(self.parameters_.period)
-            period_ds = forecaster.forecast_parameters(steps, simulations)
-            return ParameterContainer(
+            period_ds = forecaster.forecast_parameters(steps)
+            parameters = ParameterContainer(
                 static=self.parameters_.static,
                 period=period_ds
             )
         elif isinstance(forecaster, DualForecaster):
             forecaster.fit(self.parameters_)
-            period_ds, cohort_ds = forecaster.forecast_parameters(steps, simulations)
+            period_ds, cohort_ds = forecaster.forecast_parameters(steps)
             return ParameterContainer(
                 static=self.parameters_.static,
                 period=period_ds,
                 cohort=cohort_ds
             )
-        raise ValueError("Please enter a valid forecaster instance.")
+        else:
+            raise ValueError("Please enter a valid forecaster instance.")
+        
+        predicted_mortalities = self._predict_mortalities(parameters)
+        return ForecastContainer(predicted_mortalities, parameters)
 
     # TODO: parameters_ arent enforced everywhere else, so its kind-of weird
     # to be expecting every model to automatically have them (IT SHOULD BE ENFORCED)
-    # TODO: The @attribute approach is bad, doesnt really enforce it, as I always
-    # have to add the basically empty attribute method parameters_, but after
+    # TODO: The @property approach is bad, doesnt really enforce it, as I always
+    # have to add the basically empty property method parameters_, but after
     # that I still have to define the parameters_ individually in the fit
     # TODO: Thats also one of the problems, some centralisation of all the models
     # and what their estimated parameters are would be nice, like dictionaries

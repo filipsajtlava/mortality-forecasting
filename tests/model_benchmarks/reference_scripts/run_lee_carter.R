@@ -38,10 +38,22 @@ for (country_code in available_countries) {
     )
 
     fit_lc <- lca(demog_data, adjust = "none")
+    forecasts_analytical <- forecast(fit_lc, h = 100, level = 95, se = "innovonly")
+    kt_last <- as.numeric(tail(fit_lc$kt, 1))
+
     estimated_parameters <- list(
-        ax = as.vector(fit_lc$ax),
-        bx = as.vector(fit_lc$bx),
-        kt = as.vector(fit_lc$kt)
+        parameters = list(
+            ax = as.numeric(fit_lc$ax),
+            bx = as.numeric(fit_lc$bx),
+            kt = as.numeric(fit_lc$kt)
+        ),
+        forecasts = list(
+            kt = list(
+                lower = as.numeric(forecasts_analytical$kt$lower + kt_last),
+                point = as.numeric(forecasts_analytical$kt$mean + kt_last),
+                upper = as.numeric(forecasts_analytical$kt$upper + kt_last)
+            )
+        )
     )
 
     write_json(
