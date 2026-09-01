@@ -13,26 +13,23 @@ from mortality_forecasting.core._commons import (
 from mortality_forecasting import config
 
 
-#TODO: Needs the lee-miller-fix implementation
 class PoissonModel(Model):
     def __init__(
         self, 
         lee_miller_fix: bool = False,
         initialization: Literal["naive", "SVD"] = "naive",
-        iterator_epsilon: float = 10e-9,
+        ftol: float = 1e-5,
         verbose: bool = False
-    ):
-        self.iterator_epsilon = iterator_epsilon
+    ) -> None:
+        self.ftol = ftol
         self.initialization = initialization
         self.verbose = verbose
         super().__init__(lee_miller_fix=lee_miller_fix)
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
         validate_value_column(value_column)
-        required_grids = ("E", "D") if self.initialization == "naive" else ("E", "D", "M")
         self._validate_dataset(
             mortality_data=mortality_data,
-            required_grids=required_grids,
             value_column=value_column
         )
 
@@ -47,8 +44,8 @@ class PoissonModel(Model):
         iteration = 0
 
         while (
-            likelihood_change > self.iterator_epsilon and 
-            iteration < config.MAXIMUM_POISSON_ITERATIONS
+            likelihood_change > self.ftol and 
+            iteration <= config.MAXIMUM_POISSON_ITERATIONS
         ):
             iteration += 1
             ax_new = self._get_new_alpha(ax, bx, kt)
@@ -58,7 +55,7 @@ class PoissonModel(Model):
                 self._compute_log_likelihood(ax_new, bx_new, kt_new)
             )
             likelihood_change = abs(
-                self.log_likelihood_history_[-1] - 
+                (self.log_likelihood_history_[-1] - self.log_likelihood_history_[-2]) /
                 self.log_likelihood_history_[-2]
             )
             ax = ax_new
@@ -66,14 +63,22 @@ class PoissonModel(Model):
             kt = kt_new
 
             if self.verbose:
-                print(f"Iteration {iteration}: change in log-likelihood {likelihood_change}")
+                print(
+                    f"Iteration {iteration}: relative change " \
+                    f"in log-likelihood {likelihood_change}"
+                )
 
-        if iteration >= config.MAXIMUM_POISSON_ITERATIONS:
+        if iteration > config.MAXIMUM_POISSON_ITERATIONS:
             print(
                 f"WARNING: the maximum amount of iterations " \
                 f"({config.MAXIMUM_POISSON_ITERATIONS}) has been reached, " \
                 f"so the algorithm might not have converged."
             )
+
+        if self.lee_miller_fix:
+            last_year = self.mortality_data.D.year_interval["end"]
+            M_last_column = (self.D / self.E).sel({config.YEAR_DIM: last_year})
+            ax = np.log(M_last_column) - bx * kt.sel({config.YEAR_DIM: last_year})
 
         self.parameters_ = ParameterContainer(
             static=xr.Dataset(

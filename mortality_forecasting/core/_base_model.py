@@ -11,6 +11,7 @@ from ._commons import (
     ParameterContainer
 )
 from mortality_forecasting.plotting._model_plot import ModelPlotter
+from mortality_forecasting import config
 
 
 class Model(ABC):
@@ -106,7 +107,6 @@ class Model(ABC):
     def _validate_dataset(
             self, 
             mortality_data: MortalityDataset, 
-            required_grids: list[str],
             value_column: str
         ) -> None:
         """Check if the specified datasets are present in the MortalityDataset
@@ -122,38 +122,24 @@ class Model(ABC):
         required_grids
             The model specified grids this method has to check.
         """
-        for grid in required_grids:
+        reference_grid = None
+        for grid in config.FILE_SELECTION_COUNTRY_DATA.keys():
             selected_grid = getattr(mortality_data, grid, None)
-            # TODO: This is checking for way too much, the grids themselves should
-            # never allow for adding of empty datasets, for example
-            if (
-                selected_grid is None or 
-                selected_grid.data is None or 
-                selected_grid.data.empty
-            ):
-                raise ValueError(
-                    f"The necessary grid '{grid}' for this model is " \
-                    f"not available in the mortality data."
-                )
+            if selected_grid is not None:
+                try:
+                    selected_grid[value_column]
+                except:
+                    raise ValueError(
+                        "The selected column is not available in the dataset."
+                    )
 
-            try:
-                selected_grid[value_column]
-            except:
-                raise ValueError(
-                    "The selected column is not available in the dataset."
-                )
+                # TODO: this year-interval mismatch checker could be moved to commons,
+                # and maybe used in the manual loader, to look if the years are the same
+                if reference_grid is None:
+                    reference_grid = selected_grid
 
-        # TODO: this year-interval mismatch checker could be moved to commons,
-        # and maybe used in the manual loader, to look if the years are the same
-        if len(required_grids) > 1:
-            reference_year_interval = getattr(
-                mortality_data, 
-                required_grids[0]
-            ).year_interval
-
-            for grid in required_grids:
-                if reference_year_interval != getattr(mortality_data, grid).year_interval:
+                if reference_grid.year_interval != getattr(mortality_data, grid).year_interval:
                     raise ValueError(
                         f"Year interval mismatch between grid " \
-                        f"'{required_grids[0]}' and grid '{grid}'."
+                        f"'{reference_grid}' and grid '{grid}'."
                     )

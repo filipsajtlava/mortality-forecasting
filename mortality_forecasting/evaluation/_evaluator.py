@@ -4,15 +4,17 @@ import xarray as xr
 import numpy as np
 
 from mortality_forecasting import config
+from mortality_forecasting.plotting._evaluator_plot import EvaluatorPlotter
 
-
+# TODO: enfore the forecast to be the entire ForecastContainer or the .mortalities_
+# but dont allow the user to pass only the single bound="point"
 class ForecastEvaluator:
     def __init__(
             self, 
             actual: xr.DataArray,
             forecast: xr.DataArray,
             point_estimate: Literal["median", "mean"] = "median"
-        ):
+        ) -> None:
         self.actual = actual
         self.forecast = forecast
         self.point_estimate = point_estimate
@@ -27,6 +29,10 @@ class ForecastEvaluator:
         else:
             clean_data = self.forecast
         return clean_data.to_numpy()
+
+    @property
+    def plot(self) -> EvaluatorPlotter:
+        return EvaluatorPlotter(self)
 
     def mae(self) -> float:
         """Calculates the MAE of aggregated predictions and the test set
@@ -50,7 +56,7 @@ class ForecastEvaluator:
         squared_errors = (np.log(agg_forecast) - np.log(self.actual)) ** 2
         return float(np.sqrt(squared_errors.mean()))    
 
-    def mase(self, training: xr.DataArray) -> xr.DataArray:
+    def mase(self, training_data: xr.DataArray) -> xr.DataArray:
         """Calculates the MASE of aggregated predictions and the test set
         for individual ages
 
@@ -64,11 +70,11 @@ class ForecastEvaluator:
         ).mean(dim=config.YEAR_DIM)
 
         training_diff_error = np.abs(
-            training.diff(dim=config.YEAR_DIM)
+            training_data.diff(dim=config.YEAR_DIM)
         ).mean(dim=config.YEAR_DIM)
         return abs_mean_errors / training_diff_error
     
-    def mser(self, training: xr.DataArray) -> xr.DataArray:
+    def mser(self, training_data: xr.DataArray) -> xr.DataArray:
         """Calculates the MSEr of aggregated predictions and the test set
         for individual ages (MASE without the absolute value)
 
@@ -82,6 +88,6 @@ class ForecastEvaluator:
         ).mean(dim=config.YEAR_DIM)
 
         training_diff_error = np.abs(
-            training.diff(dim=config.YEAR_DIM)
+            training_data.diff(dim=config.YEAR_DIM)
         ).mean(dim=config.YEAR_DIM)
         return mean_error_preds / training_diff_error

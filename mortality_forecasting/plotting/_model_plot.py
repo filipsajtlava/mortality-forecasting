@@ -1,87 +1,97 @@
+from __future__ import annotations
+from typing import Any, TYPE_CHECKING
 from collections.abc import Sequence
-from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 
-from mortality_forecasting.core._base_plotter import Plotter
 from mortality_forecasting import config
+from mortality_forecasting.core._base_plotter import Plotter
+if TYPE_CHECKING:
+    from mortality_forecasting.core._base_model import Model
 
 
 class ModelPlotter(Plotter):
+    def __init__(self, model: Model) -> None:
+        self.model = model
+
     # TODO: this method needs a comprehensive docstring to explain the plot config
     def plot_parameters(
             self, 
-            ax: Sequence[Axes] | None = None,
-            plot_config: dict[str, Sequence[Any] | Any] = None
+            axs: Sequence[Axes] | None = None,
+            **kwargs
         ) -> list[Axes]:
         self.model._check_if_fitted()
-        axs, plot_config = self._validate_inputs(
-            ax, 
-            plot_config, 
-            axs_needed=len(self.model.parameters_)
+        n_params = len(self.model.parameters_)
+        axs = self._validate_and_normalize_axs(
+            axes_user_input=axs,
+            axs_needed=n_params,
         )
+        ax_kwargs, line_kwargs = self._split_kwargs(n_params ,"ax", **kwargs)
 
         for i, parameter in enumerate(self.model.parameters_):
             parameter_da = self.model.parameters_[parameter]
             x_dim = parameter_da.dims[0]
             x_axis = parameter_da.coords[x_dim].values
 
-            individual_ax_config = {}
-            if plot_config is not None:
-                individual_ax_config = {
-                    key: values[i] for key, values in plot_config.items()
-                }
+            sub_line_kw = {k: v[i] for k, v in line_kwargs.items()}
+            sub_line_defaults = {"label": self.model.value_column}
+            axs[i].plot(x_axis, parameter_da, **(sub_line_defaults |sub_line_kw))
 
-            if "label" not in individual_ax_config:
-                individual_ax_config["label"] = self.model.value_column
-                    
-            axs[i].plot(x_axis, parameter_da, **individual_ax_config)
-            axs[i].set(
-                xlabel=f"{x_dim} {config.PLOTTING_LABELS[x_dim]}",
-                ylabel=f"Parameter {parameter}"
-            )
+            sub_ax_kw = {k: v[i] for k, v in ax_kwargs.items()}
+            sub_ax_defaults = {
+                "xlabel": f"{x_dim} {config.PLOTTING_LABELS[x_dim]}",
+                "ylabel": f"Parameter {parameter}",
+            }
+            axs[i].set(**(sub_ax_defaults | sub_ax_kw))
             axs[i].legend()
         return axs
 
     def plot_residual_heatmap(
             self,
             ax: Axes | None = None,
-            plot_config: dict[str, Sequence[Any] | Any] = None
+            **kwargs
         ) -> Axes:
         self.model._check_if_fitted()
-        ax, plot_config = self._validate_inputs(
-            ax,
-            plot_config, 
-            additional_grids_required=("M",)
+        ax = self._validate_and_normalize_axs(axes_user_input=ax)
+        ax_kwargs, colorbar_kwargs, imshow_kwargs = self._split_kwargs(
+            1, "ax", "colorbar", **kwargs
         )
         
-        actual = self.model.mortality_data.M[self.model.value_column]
+        actual = (
+            self.model.mortality_data.D[self.model.value_column] /
+            self.model.mortality_data.E[self.model.value_column]
+        )
         predicted = self.model.predict_in_sample()
         residuals = (actual - predicted) / np.sqrt(predicted)
 
         x_axis_ages = residuals.coords[config.AGE_DIM]
         y_axis_years = residuals.coords[config.YEAR_DIM].values
 
+        imshow_defaults = {"origin": "lower"}
         ax.imshow(
-            residuals.T, 
-            origin="lower",
+            residuals.T,
             extent=[
                 x_axis_ages.min(), x_axis_ages.max(), 
                 y_axis_years.min(), y_axis_years.max()
             ], 
-            **plot_config
+            **(imshow_defaults | imshow_kwargs)
         )
-        ax.set(
-            xlabel=f"{config.AGE_DIM} {config.PLOTTING_LABELS[config.AGE_DIM]}",
-            ylabel=f"{config.YEAR_DIM} {config.PLOTTING_LABELS[config.YEAR_DIM]}"
-        )
+
         im = ax.images[0]
+        ax_defaults = {
+            "xlabel": f"{config.AGE_DIM} {config.PLOTTING_LABELS[config.AGE_DIM]}",
+            "ylabel": f"{config.YEAR_DIM} {config.PLOTTING_LABELS[config.YEAR_DIM]}",
+        }
+        ax.set(**(ax_defaults | ax_kwargs))
+
+        colorbar_defaults = {
+            "label": f"Relative {self.model.value_column} mortality - deviance residuals"
+        }
         ax.figure.colorbar(
             im, 
             ax=ax, 
-            label=f"Relative {self.model.value_column} mortality - deviance residuals"
+            **(colorbar_defaults | colorbar_kwargs)
         )
         return ax
 
@@ -89,61 +99,57 @@ class ModelPlotter(Plotter):
             self,
             year: int,
             ax: Axes | None = None,
-            plot_config: dict[str, Sequence[Any] | Any] = None
-        ):
+            **kwargs
+        ) -> Axes:
         self.model._check_if_fitted()
-        ax, plot_config = self._validate_inputs(
-            ax,
-            plot_config, 
-            additional_grids_required=("M",)
+        ax = self._validate_and_normalize_axs(axes_user_input=ax)
+        ax_kwargs, scatter_kwargs, line_kwargs = self._split_kwargs(
+            1, "ax", "scatter", **kwargs
         )
 
-        actual = np.log(
-            self.model.mortality_data.M[self.model.value_column]
-            .sel({config.YEAR_DIM: year})
+        M = (
+            self.model.mortality_data.D[self.model.value_column] /
+            self.model.mortality_data.E[self.model.value_column]
         )
+        actual = np.log(M.sel({config.YEAR_DIM: year}))
         predicted = np.log(
             self.model.predict_in_sample()
             .sel({config.YEAR_DIM: year})
         )
         x_axis_ages = actual.coords[config.AGE_DIM].values
 
-        if "label" not in plot_config:
-            plot_config = plot_config.copy()
-            plot_config["label"] = "Prediction"
+        scatter_defaults = {
+            "color": "black",
+            "label": f"observed {year} values",
+        }
+        ax.scatter(x_axis_ages, actual, **(scatter_defaults | scatter_kwargs))
 
-        ax.scatter(
-            x_axis_ages,
-            actual,
-            label=f"observed {year} values",
-            color="black"
-        )
-        ax.plot(
-            x_axis_ages,
-            predicted,
-            **plot_config
-        )
-        ax.set(
-            xlabel=f"{config.AGE_DIM} {config.PLOTTING_LABELS[config.AGE_DIM]}",
-            ylabel=f"Log-mortalities"
-        )
+        line_defaults = {"label": "Prediction"}
+        ax.plot(x_axis_ages, predicted, **(line_defaults | line_kwargs))
+
+        ax_defaults = {
+            "xlabel": f"{config.AGE_DIM} {config.PLOTTING_LABELS[config.AGE_DIM]}",
+            "ylabel": "Log-mortalities"
+        }
+        ax.set(**(ax_defaults | ax_kwargs))
         ax.legend()
         return ax
 
     def plot_fitted_vs_actual(
             self, 
             ax: Axes | None = None,
-            plot_config: dict[str, Sequence[Any] | Any] = None,
-            central_line: bool = True
+            **kwargs
         ) -> Axes:
         self.model._check_if_fitted()
-        ax, plot_config = self._validate_inputs(
-            ax, 
-            plot_config, 
-            additional_grids_required=("M",)
+        ax = self._validate_and_normalize_axs(axes_user_input=ax)
+        ax_kwargs, axline_kwargs, scatter_kwargs = self._split_kwargs(
+            1, "ax", "axline", **kwargs
         )
 
-        actual = self.model.mortality_data.M[self.model.value_column]
+        actual = (
+            self.model.mortality_data.D[self.model.value_column] /
+            self.model.mortality_data.E[self.model.value_column]
+        )
         predicted = self.model.predict_in_sample()
 
         max_value = max(actual.max(), predicted.max())
@@ -152,84 +158,23 @@ class ModelPlotter(Plotter):
         max_value += edge_space
         min_value -= edge_space
 
-        ax.scatter(actual, predicted, **plot_config)
-        if central_line:
-            ax.axline(
-                [min_value, min_value], 
-                [max_value, max_value], 
-                color="black", 
-                linestyle="dashed"
-            )
-        ax.set(
-            xlabel="Actual mortalities",
-            ylabel="Predicted mortalities",
-            xlim=[min_value, max_value], 
-            ylim=[min_value, max_value]
+        ax.scatter(actual, predicted, **scatter_kwargs)
+
+        axline_defaults = {
+            "color": "black",
+            "linestyle": "dashed"
+        }
+        ax.axline(
+            [min_value, min_value], 
+            [max_value, max_value],
+            **(axline_defaults | axline_kwargs)
         )
+
+        ax_defaults = {
+            "xlabel": "Actual mortalities",
+            "ylabel": "Predicted mortalities",
+            "xlim": [min_value, max_value],
+            "ylim": [min_value, max_value]
+        }
+        ax.set(**(ax_defaults | ax_kwargs))
         return ax
-
-    # TODO: think about moving these into the parent class, if possible
-    def _validate_inputs(
-            self, 
-            axes_user_input: Sequence[Axes] | Axes | None, 
-            plot_config: dict[str, Sequence[Any] | Any],
-            additional_grids_required: tuple[str] | None = None,
-            axs_needed: int = 1
-        ) -> tuple[list[Axes] | Axes, dict[str, Sequence[Any] | Any]]:
-        ax = self._validate_and_normalize_axs(axes_user_input, axs_needed)
-        plot_config = self._validate_and_extrapolate_config(plot_config, axs_needed)
-
-        if additional_grids_required is not None:
-            self.model._validate_dataset(
-                self.model.mortality_data,
-                required_grids=additional_grids_required
-            )
-
-        if axs_needed == 1:
-            ax = ax[0]
-        return ax, plot_config
-
-    def _validate_and_extrapolate_config(
-            self, 
-            plot_config: dict[str, Sequence[Any] | Any] | None,
-            axs_needed: int
-        ) -> dict[str, Any]:
-        if not plot_config:
-            return {}
-
-        new_config = {}
-        for key, settings in plot_config.items():
-            is_seq = isinstance(settings, Sequence) and not isinstance(settings, str)
-
-            if not is_seq:
-                new_config[key] = settings if axs_needed == 1 else [settings] * axs_needed
-            elif len(settings) != axs_needed:
-                raise ValueError(
-                    f"The configuration needs individual settings for "
-                    f"each of the {axs_needed} axs, while you " 
-                    f"provided {len(settings)} for '{key}'."
-                )
-            else:
-                new_config[key] = settings[0] if axs_needed == 1 else settings
-
-        return new_config
-
-    def _validate_and_normalize_axs(
-            self,
-            axs: list[Axes] | Axes | None,
-            axs_needed: int 
-        ) -> list[Axes]:
-        if axs is not None and isinstance(axs, Sequence):
-            if len(axs) != axs_needed:
-                raise ValueError(
-                    f"This plotting function needs {axs_needed} " \
-                    f"axs, while you provided only {len(axs)}."
-                )
-        elif isinstance(axs, Axes):
-            axs = [axs]
-        else:
-            axs = []
-            for _ in range(axs_needed):
-                fig, ax = plt.subplots()
-                axs.append(ax)
-        return axs
