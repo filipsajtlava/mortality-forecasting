@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, TYPE_CHECKING, Literal
+from typing import Any, TYPE_CHECKING
 from collections.abc import Sequence
 
 from matplotlib.axes import Axes
@@ -21,19 +21,16 @@ class EvaluatorPlotter(Plotter):
             self,
             training_data: xr.DataArray,
             ax: Axes | None = None,
-            **kwargs
+            ax_settings: dict[str, Any] = {},
+            underestimated_settings: dict[str, Any] = {},
+            overestimated_settings: dict[str, Any] = {},
+            mase_settings: dict[str, Any] = {},
+            bar_settings: dict[str, Any] = {}
         ) -> Axes:
         ax = self._validate_and_normalize_axs(axes_user_input=ax)
-        (
-            ax_kwargs,
-            under_kwargs, 
-            over_kwargs,
-            mase_kwargs,
-            bar_kwargs
-        ) = self._split_kwargs(
-            1, 
-            "ax", "underestimated", "overestimated", "mase", 
-            **kwargs
+        self._validate_settings_length(
+            1, ax_settings, underestimated_settings, overestimated_settings,
+            mase_settings, bar_settings
         )
 
         mase_da = self.evaluator.mase(training_data)
@@ -47,11 +44,11 @@ class EvaluatorPlotter(Plotter):
             "color": "red",
             "label": "Overestimated mortality"
         }
-        under_cfg = under_defaults | under_kwargs 
-        over_cfg = over_defaults | over_kwargs
+        under_cfg = under_defaults | underestimated_settings 
+        over_cfg = over_defaults | overestimated_settings
 
         mask = np.where(mser_da >= 0, under_cfg["color"], over_cfg["color"])
-        ax.bar(np.arange(0, mase_da.size), mase_da.values, color=mask, **bar_kwargs)
+        ax.bar(np.arange(0, mase_da.size), mase_da.values, color=mask, **bar_settings)
 
         ax.plot(
             [], [], 
@@ -72,7 +69,7 @@ class EvaluatorPlotter(Plotter):
         ax.plot(
             [], [],
             marker="s", linestyle="",
-            **(mase_defaults | mase_kwargs)
+            **(mase_defaults | mase_settings)
         )
 
         ax.tick_params(axis="x", rotation=90)
@@ -81,7 +78,7 @@ class EvaluatorPlotter(Plotter):
             "xlabel": f"{config.AGE_DIM} {config.PLOTTING_LABELS[config.AGE_DIM]}",
             "ylabel": f"Value of MASE"
         }
-        ax.set(**(ax_defaults | ax_kwargs))
+        ax.set(**(ax_defaults | ax_settings))
         ax.legend()
         return ax
 
@@ -91,20 +88,17 @@ class EvaluatorPlotter(Plotter):
             training_data: xr.DataArray,
             ax: Axes | None = None,
             colors: Sequence[ColorType] | None = None,
-            **kwargs
+            ax_settings: dict[str, Any] = {},
+            training_settings: dict[str, Any] = {},
+            testing_settings: dict[str, Any] = {},
+            vline_settings: dict[str, Any] = {},
+            interval_fill_settings: dict[str, Any] = {},
+            line_settings: dict[str, Any] = {}
         ) -> Axes:
         ax = self._validate_and_normalize_axs(axes_user_input=ax)
-        (
-            ax_kwargs, 
-            training_kwargs, 
-            testing_kwargs,
-            fill_kwargs, 
-            vline_kwargs,
-            line_kwargs
-        ) = self._split_kwargs(
-            1, 
-            "ax", "training", "testing", "fill", "vline",
-            **kwargs
+        self._validate_settings_length(
+            1, ax_settings, training_settings, testing_settings,
+            vline_settings, line_settings
         )
 
         split_year = training_data[config.YEAR_DIM][-1]
@@ -113,7 +107,7 @@ class EvaluatorPlotter(Plotter):
             "color": "black",
             "linewidth": 2
         }
-        ax.axvline(x=split_year, **(vline_defaults | vline_kwargs))
+        ax.axvline(x=split_year, **(vline_defaults | vline_settings))
         # for the plot lines to intersect correctly, we have to extend the 
         # actual data, to contain the last year of the train set as well
         actual_back_extended = xr.concat(
@@ -127,8 +121,7 @@ class EvaluatorPlotter(Plotter):
 
         if colors is not None:
             ax.set_prop_cycle(color=colors)
-        for i, age in enumerate(selected_ages): 
-            
+        for age in selected_ages: 
             if colors is not None:
                 color = ax._get_lines.get_next_color()
             else:
@@ -141,7 +134,7 @@ class EvaluatorPlotter(Plotter):
             ax.plot(
                 training_data[config.YEAR_DIM],
                 training_data.sel({config.AGE_DIM: age}),
-                **(training_defaults | training_kwargs)
+                **(training_defaults | training_settings)
             )
 
             testing_defaults = {
@@ -152,7 +145,7 @@ class EvaluatorPlotter(Plotter):
             ax.plot(
                 actual_back_extended[config.YEAR_DIM],
                 actual_back_extended.sel({config.AGE_DIM: age}),
-                **(testing_defaults | testing_kwargs)
+                **(testing_defaults | testing_settings)
             )
 
             line_defaults = {
@@ -165,10 +158,10 @@ class EvaluatorPlotter(Plotter):
                     config.AGE_DIM: age,
                     config.BOUND_DIM: "point"
                 }),
-                **(line_defaults | line_kwargs)
+                **(line_defaults | line_settings)
             )
 
-            fill_defaults = {
+            interval_fill_defaults = {
                 "alpha": 0.25,
                 "color": color
             }
@@ -182,14 +175,14 @@ class EvaluatorPlotter(Plotter):
                     config.AGE_DIM: age,
                     config.BOUND_DIM: "upper"
                 }),
-                **(fill_defaults | fill_kwargs)
+                **(interval_fill_defaults | interval_fill_settings)
             )
 
         ax_defaults = {
             "xlabel": f"{config.YEAR_DIM} {config.PLOTTING_LABELS[config.YEAR_DIM]}",
             "ylabel": f"Mortality values"
         }
-        ax.set(**(ax_defaults | ax_kwargs))
+        ax.set(**(ax_defaults | ax_settings))
         ax.legend()
         return ax
         

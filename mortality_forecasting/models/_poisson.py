@@ -6,6 +6,7 @@ import xarray as xr
 from mortality_forecasting.data_processing._dataset import MortalityDataset
 from mortality_forecasting.models._lee_carter import LeeCarterModel
 from mortality_forecasting.core._base_model import Model
+from mortality_forecasting.core._base_glm import GLMCapable
 from mortality_forecasting.core._commons import (
     validate_value_column, 
     ParameterContainer
@@ -13,7 +14,7 @@ from mortality_forecasting.core._commons import (
 from mortality_forecasting import config
 
 
-class PoissonModel(Model):
+class PoissonModel(Model, GLMCapable):
     def __init__(
         self, 
         lee_miller_fix: bool = False,

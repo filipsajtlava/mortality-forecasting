@@ -1,4 +1,3 @@
-from typing import Any
 from collections.abc import Sequence
 from abc import ABC
 
@@ -25,25 +24,17 @@ class Plotter(ABC):
             axs = [plt.subplots()[1] for _ in range(axs_needed)]
         return axs[0] if axs_needed==1 else axs
 
-    def _split_kwargs(
-            self, 
-            axs_needed: int = 1,
-            *prefixes: str,
-            **kwargs
-        ) -> tuple[dict[str, Any], ...]:
-        results = {prefix: {} for prefix in prefixes}
-        unprefixed = {}
+    def _validate_settings_length(self, axs_needed: int = 1, *settings) -> None:
+        if axs_needed == 1:
+            return
 
-        for key, value in kwargs.items():
-            matched_prefix = False
-            for prefix in prefixes:
-                prefix_tag = f"{prefix}_"
-                if key.startswith(prefix_tag):
-                    clean_key = key[len(prefix_tag):]
-                    results[prefix][clean_key] = value
-                    matched_prefix = True
-                    break
-            if not matched_prefix:
-                unprefixed[key] = value
-
-        return *(results[p] for p in prefixes), unprefixed
+        for setting in settings:
+            if not setting:
+                continue
+            for key, value in setting.items():
+                error_msg = f"Please provide {axs_needed} different values for '{key}'"
+                if isinstance(value, Sequence) and not isinstance(value, str):
+                    if len(value) != axs_needed:
+                        raise ValueError(error_msg)
+                else:
+                    raise ValueError(error_msg)
