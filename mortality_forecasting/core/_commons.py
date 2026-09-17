@@ -1,10 +1,24 @@
 from dataclasses import dataclass, fields
 from typing import Iterator
 from itertools import chain
+from functools import wraps
+
 import xarray as xr
 
 from mortality_forecasting import config
+from mortality_forecasting.core._base_glm import GLMCapable
 
+
+# This was moved here from model plotter in case anything else uses it
+def require_glm(func):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if not isinstance(self.model, GLMCapable):
+            raise TypeError(
+                f"'{func.__name__}' is only available for GLM structures."
+            )
+        return getattr(self, func.__name__).__wrapped__(self, *args, **kwargs)
+    return wrapper
 
 def validate_value_column(value_column: str) -> None:
     if value_column not in config.VALUE_COLUMNS:

@@ -18,12 +18,12 @@ class PoissonModel(Model, GLMCapable):
     def __init__(
         self, 
         lee_miller_fix: bool = False,
-        initialization: Literal["naive", "SVD"] = "naive",
+        initialization: Literal["naive", "SVD"] = "SVD",
         ftol: float = 1e-5,
         verbose: bool = False
     ) -> None:
-        self.ftol = ftol
         self.initialization = initialization
+        self.ftol = ftol
         self.verbose = verbose
         super().__init__(lee_miller_fix=lee_miller_fix)
 
@@ -65,8 +65,8 @@ class PoissonModel(Model, GLMCapable):
 
             if self.verbose:
                 print(
-                    f"Iteration {iteration}: relative change " \
-                    f"in log-likelihood {likelihood_change}"
+                    f"Iteration {iteration} - relative change " \
+                    f"in log-likelihood: {likelihood_change}"
                 )
 
         if iteration > config.MAXIMUM_POISSON_ITERATIONS:
@@ -101,7 +101,7 @@ class PoissonModel(Model, GLMCapable):
         return self
 
     def _predict_mortalities(
-            self, 
+            self,
             forecasted_values: ParameterContainer
         ) -> xr.DataArray:
         log_M_predictions = (

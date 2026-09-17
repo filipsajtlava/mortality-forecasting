@@ -1,8 +1,12 @@
 from collections.abc import Sequence
 from abc import ABC
+from typing import Any
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
+import xarray as xr
+
+from mortality_forecasting import config
 
 
 class Plotter(ABC):
@@ -38,3 +42,41 @@ class Plotter(ABC):
                         raise ValueError(error_msg)
                 else:
                     raise ValueError(error_msg)
+
+    def _plot_heatmap_from_matrix(
+            self,
+            rates: xr.DataArray,
+            ax: Axes,
+            ax_settings: dict[str, Any],
+            colorbar_settings: dict[str, Any],
+            imshow_settings: dict[str, Any]
+        ) -> Axes:
+        x_axis_ages = rates.coords[config.AGE_DIM].values
+        y_axis_years = rates.coords[config.YEAR_DIM].values
+
+        imshow_defaults = {"origin": "lower", "cmap": "magma"}
+        ax.imshow(
+            rates.T,
+            extent=[
+                x_axis_ages.min(), x_axis_ages.max(), 
+                y_axis_years.min(), y_axis_years.max()
+            ], 
+            **(imshow_defaults | imshow_settings)
+        )
+
+        im = ax.images[0]
+        ax_defaults = {
+            "xlabel": f"{config.AGE_DIM} {config.PLOTTING_LABELS[config.AGE_DIM]}",
+            "ylabel": f"{config.YEAR_DIM} {config.PLOTTING_LABELS[config.YEAR_DIM]}",
+        }
+        ax.set(**(ax_defaults | ax_settings))
+
+        colorbar_defaults = {
+            "label": f"Value distribution"
+        }
+        ax.figure.colorbar(
+            im, 
+            ax=ax, 
+            **(colorbar_defaults | colorbar_settings)
+        )
+        return ax  

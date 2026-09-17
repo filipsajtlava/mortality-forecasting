@@ -75,7 +75,7 @@ class EvaluatorPlotter(Plotter):
         ax.tick_params(axis="x", rotation=90)
         ax.set_xticks(np.arange(0, mase_da.size, 10))
         ax_defaults = {
-            "xlabel": f"{config.AGE_DIM} {config.PLOTTING_LABELS[config.AGE_DIM]}",
+            "xlabel": f"{config.AGE_DIM} ${config.PLOTTING_LABELS[config.AGE_DIM]}$",
             "ylabel": f"Value of MASE"
         }
         ax.set(**(ax_defaults | ax_settings))
@@ -121,14 +121,12 @@ class EvaluatorPlotter(Plotter):
 
         if colors is not None:
             ax.set_prop_cycle(color=colors)
+
         for age in selected_ages: 
-            if colors is not None:
-                color = ax._get_lines.get_next_color()
-            else:
-                color = "black"
+            color = ax._get_lines.get_next_color()
             training_defaults = {
                 "color": color,
-                "label": f"Age {age}",
+                "label": f"Age ${age}$",
                 "linewidth": 2
             }
             ax.plot(
