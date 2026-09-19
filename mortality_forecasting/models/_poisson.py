@@ -79,7 +79,9 @@ class PoissonModel(Model, GLMCapable):
         if self.lee_miller_fix:
             last_year = self.mortality_data.D.year_interval["end"]
             M_last_column = (self.D / self.E).sel({config.YEAR_DIM: last_year})
-            ax = np.log(M_last_column) - bx * kt.sel({config.YEAR_DIM: last_year})
+            ax = (
+                np.log(M_last_column) - bx * kt.sel({config.YEAR_DIM: last_year})
+            ).drop_vars(config.YEAR_DIM)
 
         self.parameters_ = ParameterContainer(
             static=xr.Dataset(
@@ -94,7 +96,7 @@ class PoissonModel(Model, GLMCapable):
                 },                
                 attrs={
                     "overlap": self.mortality_data.E.overlap,
-                    "last_year": self.mortality_data.E.year_interval["end"]
+                    "last_year": self.mortality_data.E.year_interval["end"],
                 }
             )
         )

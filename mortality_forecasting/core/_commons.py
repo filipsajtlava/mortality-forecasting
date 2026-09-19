@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields
-from typing import Iterator
+from typing import Iterator, Literal
 from itertools import chain
 from functools import wraps
 
@@ -10,15 +10,20 @@ from mortality_forecasting.core._base_glm import GLMCapable
 
 
 # This was moved here from model plotter in case anything else uses it
-def require_glm(func):
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        if not isinstance(self.model, GLMCapable):
-            raise TypeError(
-                f"'{func.__name__}' is only available for GLM structures."
-            )
-        return getattr(self, func.__name__).__wrapped__(self, *args, **kwargs)
-    return wrapper
+def require_glm(target_attr=None):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            target = getattr(self, target_attr) if target_attr else self
+            
+            if not isinstance(target, GLMCapable):
+                attr_desc = f"self.{target_attr}" if target_attr else "self"
+                raise TypeError(
+                    f"'{func.__name__}' requires a GLM structure at {attr_desc}."
+                )
+            return func(self, *args, **kwargs)
+        return wrapper
+    return decorator
 
 def validate_value_column(value_column: str) -> None:
     if value_column not in config.VALUE_COLUMNS:
@@ -26,6 +31,30 @@ def validate_value_column(value_column: str) -> None:
             f"The selected value column '{value_column}' is unavailable, " \
             f"try one of the following: {config.VALUE_COLUMNS}"
         )
+
+def bounds_from_simulations(
+        da: xr.DataArray,
+        alpha: float = 0.05,
+        point_estimate: Literal["mean", "median"] = "median"
+    ) -> xr.DataArray:
+
+    lower_da = da.quantile(
+        alpha / 2.,
+        dim=config.SIMULATION_DIM
+    ).drop_vars("quantile", errors="ignore")
+    point_da = getattr(da, point_estimate)(
+        dim=config.SIMULATION_DIM
+    )
+    upper_da = da.quantile(
+        1 - alpha / 2,
+        dim=config.SIMULATION_DIM
+    ).drop_vars("quantile", errors="ignore")
+    bounds_da = (
+        xr.concat([lower_da, point_da, upper_da], dim=config.BOUND_DIM)
+        .assign_coords({config.BOUND_DIM: ["lower", "point", "upper"]})
+        .transpose(config.YEAR_DIM, config.BOUND_DIM, ...)
+    )
+    return bounds_da
 
 @dataclass
 class ParameterContainer:

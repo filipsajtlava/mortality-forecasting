@@ -12,16 +12,10 @@ class RandomWalkWithDrift(Forecaster):
     def __init__(
             self, 
             seed: int | np.random.Generator | None = None,
-            simulations: int | None = None,
-            alpha: float = 0.05,
-            return_simulations: bool = False,
-            point_estimate: Literal["mean", "median"] = "median"
+            simulations: int | None = None
         ) -> None:
         super().__init__(seed=seed)
         self.simulations = simulations
-        self.alpha = alpha
-        self.return_simulations = return_simulations
-        self.point_estimate = point_estimate
 
     # TODO: keeping the outputs in dictionaries for now, more complex forecasters
     # may require special output containers, just like ParameterContainer, dont forget
@@ -96,27 +90,7 @@ class RandomWalkWithDrift(Forecaster):
             dims=[config.YEAR_DIM, config.SIMULATION_DIM]
         )
 
-        if self.return_simulations:
-            return forecasts_da
-        
-        lower_da = forecasts_da.quantile(
-            self.alpha / 2.,
-            dim=config.SIMULATION_DIM
-        ).drop_vars("quantile", errors="ignore")
-        point_da = getattr(forecasts_da, self.point_estimate)(
-            dim=config.SIMULATION_DIM
-        )
-        upper_da = forecasts_da.quantile(
-            1 - self.alpha / 2,
-            dim=config.SIMULATION_DIM
-        ).drop_vars("quantile", errors="ignore")
-
-        combined_da = (
-            xr.concat([lower_da, point_da, upper_da], dim=config.BOUND_DIM)
-            .assign_coords({config.BOUND_DIM: ["lower", "point", "upper"]})
-            .transpose(config.YEAR_DIM, config.BOUND_DIM)
-        )
-        return combined_da
+        return forecasts_da
 
     def _forecast_parameter_analytical(
             self, 

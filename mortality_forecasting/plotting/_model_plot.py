@@ -167,7 +167,7 @@ class ModelPlotter(Plotter):
     # ==================== GLM PLOTTERS ==================== #
     # ====================================================== #
 
-    @require_glm
+    @require_glm("model")
     def plot_residual_heatmap(
             self,
             residual_type: Literal["deviance", "pearson"],
@@ -196,7 +196,7 @@ class ModelPlotter(Plotter):
             imshow_settings=imshow_settings
         )
 
-    @require_glm
+    @require_glm("model")
     def plot_residual_histogram(
             self, 
             residual_type: Literal["deviance", "pearson"],
@@ -226,7 +226,7 @@ class ModelPlotter(Plotter):
         ax.set(**(ax_defaults | ax_settings))
         return ax
 
-    @require_glm
+    @require_glm("model")
     def plot_residual_scatter(
             self,
             residual_type: Literal["deviance", "pearson"],
@@ -258,7 +258,7 @@ class ModelPlotter(Plotter):
         ax.set(**(ax_defaults | ax_settings))
         return ax
 
-    @require_glm
+    @require_glm("model")
     def plot_convergence(
             self,
             ax: Axes | None = None,

@@ -6,12 +6,10 @@ import xarray as xr
 from mortality_forecasting.data_processing._dataset import MortalityDataset
 from mortality_forecasting.forecasting._dual_forecaster import DualForecaster
 from ._base_forecaster import Forecaster
-from ._commons import (
-    ForecastContainer, 
-    ParameterContainer
-)
+from ._commons import ForecastContainer, ParameterContainer
 from mortality_forecasting.plotting._model_plot import ModelPlotter
 from mortality_forecasting import config
+from mortality_forecasting.core._base_glm import GLMCapable
 
 
 class Model(ABC):
@@ -70,6 +68,8 @@ class Model(ABC):
         # fit_forecast, that does both at once, and has different definitions
         # for DualForecaster and Forecaster, so they handle it internally, out
         # of the model
+        # TODO: just polymorph this I cba, redo forecasters internally and have
+        # this like a super simple interface
         if isinstance(forecaster, Forecaster):
             forecaster.fit(self.parameters_.period)
             period_ds = forecaster.forecast_parameters(steps)
@@ -87,9 +87,10 @@ class Model(ABC):
             )
         else:
             raise ValueError("Please enter a valid forecaster instance.")
-        
+
         predicted_mortalities = self._predict_mortalities(parameters)
-        return ForecastContainer(predicted_mortalities, parameters)
+
+        return ForecastContainer(predicted_mortalities, parameters)        
 
     # TODO: parameters_ arent enforced everywhere else, so its kind-of weird
     # to be expecting every model to automatically have them (IT SHOULD BE ENFORCED)
