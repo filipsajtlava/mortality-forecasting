@@ -94,6 +94,14 @@ class ParameterContainer:
 
         raise KeyError(f"Parameter '{parameter_selection}' not found.")
 
+    def _indexed_items(self) -> Iterator[tuple[str, xr.DataArray]]:
+        """Gives only parameters that are not singular scalars"""
+        for ds in self._datasets:
+            for name in ds:
+                da = ds[name]
+                if da.ndim > 0:
+                    yield name, da
+
     # TODO: imo this is reduntant due to the data property being good enough
     def info(self) -> None:
         for field in fields(self):

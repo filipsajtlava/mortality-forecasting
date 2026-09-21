@@ -18,6 +18,7 @@ class PoissonModel(Model, GLMCapable):
     def __init__(
         self, 
         lee_miller_fix: bool = False,
+        bootstrap: int | None = None,
         initialization: Literal["naive", "SVD"] = "SVD",
         ftol: float = 1e-5,
         verbose: bool = False
@@ -25,7 +26,7 @@ class PoissonModel(Model, GLMCapable):
         self.initialization = initialization
         self.ftol = ftol
         self.verbose = verbose
-        super().__init__(lee_miller_fix=lee_miller_fix)
+        super().__init__(lee_miller_fix=lee_miller_fix, bootstrap=bootstrap)
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
         validate_value_column(value_column)
@@ -55,10 +56,14 @@ class PoissonModel(Model, GLMCapable):
             self.log_likelihood_history_.append(
                 self._compute_log_likelihood(ax_new, bx_new, kt_new)
             )
-            likelihood_change = abs(
-                (self.log_likelihood_history_[-1] - self.log_likelihood_history_[-2]) /
-                self.log_likelihood_history_[-2]
-            )
+            
+            prev_ll = self.log_likelihood_history_[-2]
+            curr_ll = self.log_likelihood_history_[-1]
+
+            if abs(self.log_likelihood_history_[-2]) < 1e-10:
+                likelihood_change = abs(curr_ll - prev_ll)
+            else:
+                likelihood_change = abs((curr_ll - prev_ll) / prev_ll)
             ax = ax_new
             bx = bx_new
             kt = kt_new
@@ -102,6 +107,18 @@ class PoissonModel(Model, GLMCapable):
         )
         return self
 
+    @property
+    def deviance_residuals(self) -> xr.DataArray:
+        D_pred = self.predict_in_sample() * self.E
+        log_term = xr.where(self.D == 0, 0.0, np.log(self.D / D_pred))
+        deviance_residuals = np.sign(self.D - D_pred) * np.sqrt(2 * (
+            self.D * log_term - (self.D - D_pred)
+        ))
+        return deviance_residuals
+
+    def _variance(self, deaths: xr.DataArray) -> xr.DataArray:
+        return deaths
+    
     def _predict_mortalities(
             self,
             forecasted_values: ParameterContainer

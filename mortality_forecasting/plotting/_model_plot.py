@@ -24,15 +24,15 @@ class ModelPlotter(Plotter):
             line_settings: dict[str, Any] = {}
         ) -> list[Axes]:
         self.model._check_if_fitted()
-        n_params = len(self.model.parameters_)
+        params = list(self.model.parameters_._indexed_items())
+
         axs = self._validate_and_normalize_axs(
             axes_user_input=axs,
-            axs_needed=n_params,
+            axs_needed=len(params),
         )
-        self._validate_settings_length(n_params, ax_settings, line_settings)
+        self._validate_settings_length(len(params), ax_settings, line_settings)
 
-        for i, parameter in enumerate(self.model.parameters_):
-            parameter_da = self.model.parameters_[parameter]
+        for i, (parameter, parameter_da) in enumerate(params):
             x_dim = parameter_da.dims[0]
             x_axis = parameter_da.coords[x_dim].values
 

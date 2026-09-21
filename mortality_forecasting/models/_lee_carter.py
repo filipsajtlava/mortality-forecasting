@@ -15,9 +15,10 @@ from mortality_forecasting import config
 class LeeCarterModel(Model):
     def __init__(
             self,
-            lee_miller_fix: bool = False
+            lee_miller_fix: bool = False,
+            bootstrap: int | None = None
         ) -> None:
-        super().__init__(lee_miller_fix=lee_miller_fix)
+        super().__init__(lee_miller_fix=lee_miller_fix, bootstrap=bootstrap)
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
         """Fit the Lee-Carter model using SVD.

@@ -4,27 +4,31 @@ import xarray as xr
 import numpy as np
 
 from mortality_forecasting import config
-from mortality_forecasting.core._commons import bounds_from_simulations
 from mortality_forecasting.plotting._evaluator_plot import EvaluatorPlotter
 
-# TODO: enfore the forecast to be the entire ForecastContainer or the .mortalities_
+# TODO: enforce the forecast to be the entire ForecastContainer or the .mortalities_
 # but dont allow the user to pass only the single bound="point"
 class ForecastEvaluator:
     def __init__(
             self, 
             actual: xr.DataArray,
             forecast: xr.DataArray,
-            alpha: float = 0.05,
             point_estimate: Literal["median", "mean"] = "median"
         ) -> None:
         self.actual = actual
-        self.alpha = alpha
+        self.forecast = forecast
         self.point_estimate = point_estimate
-        self.forecast = self._aggregate_forecasts(forecast)
 
-    def _aggregate_forecasts(self, forecast: xr.DataArray) -> np.ndarray:
-        forecast = bounds_from_simulations(forecast, self.alpha, self.point_estimate)
-        return forecast
+    def _get_aggregates(self) -> np.ndarray:
+        if config.BOUND_DIM in self.forecast.dims:
+            clean_data = self.forecast.sel({config.BOUND_DIM: "point"})
+        elif config.SIMULATION_DIM in self.forecast.dims:
+            clean_data = getattr(self.forecast, self.point_estimate)(
+                dim=config.SIMULATION_DIM
+            )
+        else:
+            clean_data = self.forecast
+        return clean_data.to_numpy()
 
     @property
     def plot(self) -> EvaluatorPlotter:
@@ -37,7 +41,8 @@ class ForecastEvaluator:
         -------
             MAE error.
         """
-        abs_errors = np.abs(self.actual - self.forecast.sel({config.BOUND_DIM: "point"}))
+        agg_forecast = self._get_aggregates()
+        abs_errors = np.abs(self.actual - agg_forecast)
         return float(abs_errors.mean())
 
     def log_rmse(self) -> float:
@@ -47,10 +52,8 @@ class ForecastEvaluator:
         -------
             RMSE error.
         """
-        squared_errors = (
-            np.log(self.forecast.sel({config.BOUND_DIM: "point"})) - 
-            np.log(self.actual)
-        ) ** 2
+        agg_forecast = self._get_aggregates()
+        squared_errors = (np.log(agg_forecast) - np.log(self.actual)) ** 2
         return float(np.sqrt(squared_errors.mean()))    
 
     def mase(self, training_data: xr.DataArray) -> xr.DataArray:
@@ -61,8 +64,9 @@ class ForecastEvaluator:
         -------
             MASE error.
         """
+        agg_forecast = self._get_aggregates()
         abs_mean_errors = np.abs(
-            self.actual - self.forecast.sel({config.BOUND_DIM: "point"})
+            self.actual - agg_forecast
         ).mean(dim=config.YEAR_DIM)
 
         training_diff_error = np.abs(
@@ -78,8 +82,9 @@ class ForecastEvaluator:
         -------
             MSEr error.
         """
+        agg_forecast = self._get_aggregates()
         mean_error_preds = (
-            self.actual - self.forecast.sel({config.BOUND_DIM: "point"})
+            self.actual - agg_forecast
         ).mean(dim=config.YEAR_DIM)
 
         training_diff_error = np.abs(

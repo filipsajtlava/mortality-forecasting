@@ -20,9 +20,11 @@ class Model(ABC):
     # it from here and just put it individually into the submodel init, calling super().__init__(seed)
     def __init__(
             self,
-            lee_miller_fix: bool = False
+            lee_miller_fix: bool = False,
+            bootstrap: int | None = None
         ) -> None:
         self.lee_miller_fix = lee_miller_fix
+        self.bootstrap = bootstrap
 
     @property
     def plot(self) -> ModelPlotter:

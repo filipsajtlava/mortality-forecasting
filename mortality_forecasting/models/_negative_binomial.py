@@ -15,14 +15,15 @@ class NegativeBinomialModel(Model, GLMCapable):
     def __init__(
             self, 
             lee_miller_fix: bool = False,
+            bootstrap: int | None = None,
             initialization: Literal["naive", "SVD"] = "SVD",
-            ftol: float = 1e-5,
+            ftol: float = 1e-10,
             verbose: bool = False
         ):
         self.initialization = initialization
         self.ftol = ftol
         self.verbose = verbose
-        super().__init__(lee_miller_fix=lee_miller_fix)
+        super().__init__(lee_miller_fix=lee_miller_fix, bootstrap=self.bootstrap)
 
     def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
         validate_value_column(value_column)
@@ -60,10 +61,14 @@ class NegativeBinomialModel(Model, GLMCapable):
             self.log_likelihood_history_.append(
                 self._compute_log_likelihood(ax_new, bx_new, kt_new, lambda_dispersion_new)
             )
-            likelihood_change = abs(
-                (self.log_likelihood_history_[-1] - self.log_likelihood_history_[-2]) /
-                self.log_likelihood_history_[-2]
-            )
+
+            prev_ll = self.log_likelihood_history_[-2]
+            curr_ll = self.log_likelihood_history_[-1]
+
+            if abs(self.log_likelihood_history_[-2]) < 1e-10:
+                likelihood_change = abs(curr_ll - prev_ll)
+            else:
+                likelihood_change = abs((curr_ll - prev_ll) / prev_ll)
             ax = ax_new
             bx = bx_new
             kt = kt_new
@@ -94,7 +99,7 @@ class NegativeBinomialModel(Model, GLMCapable):
                 data_vars={
                     "ax": ax, 
                     "bx": bx,
-                    "lambda": lambda_dispersion
+                    "lambda_overdisp": lambda_dispersion
                 }
             ),
             period=xr.Dataset(
@@ -108,6 +113,19 @@ class NegativeBinomialModel(Model, GLMCapable):
             )
         )
         return self
+
+    @property
+    def deviance_residuals(self) -> xr.DataArray:
+        D_pred = self.predict_in_sample() * self.E
+        log_term = xr.where(self.D == 0, 0.0, np.log(self.D / D_pred))
+        deviance_residuals = np.sign(self.D - D_pred) * np.sqrt(2 * (
+            self.D * log_term - (self.D + self.parameters_["lambda_overdisp"]) *
+            np.log((self.D + self.parameters_["lambda_overdisp"]) / (D_pred + self.parameters_["lambda_overdisp"]))
+        ))
+        return deviance_residuals
+
+    def _variance(self, deaths: xr.DataArray) -> xr.DataArray:
+        return deaths + (deaths ** 2) / self.parameters_["lambda_overdisp"]
 
     def _predict_mortalities(
             self, 
@@ -125,7 +143,7 @@ class NegativeBinomialModel(Model, GLMCapable):
         ages = self.D[config.AGE_DIM].values
         years = self.D[config.YEAR_DIM].values
 
-        lambda_dispersion = 1
+        lambda_dispersion = 10
         if self.initialization == "SVD":
             lc_model = LeeCarterModel().fit(self.mortality_data, self.value_column)
             return (

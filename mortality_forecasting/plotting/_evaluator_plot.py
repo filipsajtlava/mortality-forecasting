@@ -47,8 +47,12 @@ class EvaluatorPlotter(Plotter):
         under_cfg = under_defaults | underestimated_settings 
         over_cfg = over_defaults | overestimated_settings
 
-        mask = np.where(mser_da >= 0, under_cfg["color"], over_cfg["color"])
-        ax.bar(np.arange(0, mase_da.size), mase_da.values, color=mask, **bar_settings)
+        colors = [
+            under_cfg["color"] if val >= 0 else over_cfg["color"]
+            for val in mser_da.values
+        ]
+
+        ax.bar(np.arange(0, mase_da.size), mase_da.values, color=colors, **bar_settings)
 
         ax.plot(
             [], [], 
@@ -64,7 +68,7 @@ class EvaluatorPlotter(Plotter):
         overall_mase = float(mase_da.mean())
         mase_defaults = {
             "color": "black",
-            "label": f"MASE: {round(overall_mase, 3)}"
+            "label": f"Overall MASE: {round(overall_mase, 3)}"
         }
         ax.plot(
             [], [],
