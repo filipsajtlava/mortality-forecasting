@@ -1,5 +1,3 @@
-from mortality_forecasting.models._lee_carter import LeeCarterModel
-from mortality_forecasting.models._poisson import PoissonModel
-from mortality_forecasting.models._negative_binomial import NegativeBinomialModel
+from mortality_forecasting.models.single._lee_carter import LeeCarterModel
 
-__all__ = ["LeeCarterModel", "PoissonModel", "NegativeBinomialModel"]
+__all__ = ["LeeCarterModel"]

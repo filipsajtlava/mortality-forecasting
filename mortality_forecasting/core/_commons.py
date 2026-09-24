@@ -1,29 +1,22 @@
 from dataclasses import dataclass, fields
-from typing import Iterator, Literal
+from typing import Iterator, Literal, Any
 from itertools import chain
-from functools import wraps
 
 import xarray as xr
 
 from mortality_forecasting import config
-from mortality_forecasting.core._base_glm import GLMCapable
 
 
 # This was moved here from model plotter in case anything else uses it
-def require_glm(target_attr=None):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(self, *args, **kwargs):
-            target = getattr(self, target_attr) if target_attr else self
-            
-            if not isinstance(target, GLMCapable):
-                attr_desc = f"self.{target_attr}" if target_attr else "self"
-                raise TypeError(
-                    f"'{func.__name__}' requires a GLM structure at {attr_desc}."
-                )
-            return func(self, *args, **kwargs)
-        return wrapper
-    return decorator
+def assert_glm(target: object) -> None:
+    method = getattr(
+        getattr(target, "model", target), "method", None
+    )
+
+    if method not in ("poisson", "negative_binomial"):
+        raise TypeError(
+            f"This operation requires a GLM-fitted model, but received '{method}'."
+        )
 
 def validate_value_column(value_column: str) -> None:
     if value_column not in config.VALUE_COLUMNS:
@@ -94,6 +87,17 @@ class ParameterContainer:
 
         raise KeyError(f"Parameter '{parameter_selection}' not found.")
 
+    def get(
+            self, 
+            parameter_selection: str, 
+            default: Any = None
+        ) -> xr.DataArray | Any:
+        try:
+            return self[parameter_selection]
+        except KeyError:
+            return default
+
+    # TODO: rename this..
     def _indexed_items(self) -> Iterator[tuple[str, xr.DataArray]]:
         """Gives only parameters that are not singular scalars"""
         for ds in self._datasets:
@@ -101,17 +105,6 @@ class ParameterContainer:
                 da = ds[name]
                 if da.ndim > 0:
                     yield name, da
-
-    # TODO: imo this is reduntant due to the data property being good enough
-    def info(self) -> None:
-        for field in fields(self):
-            ds = getattr(self, field.name)
-            print(f"{field.name} parameters:")
-            if ds is None:
-                print(f"{config.INFO_INDENT}empty")
-            else:
-                for parameter in ds:
-                    print(f"{config.INFO_INDENT}['{parameter}'] with {ds.coords}")
 
     @property
     def data(self) -> xr.Dataset:

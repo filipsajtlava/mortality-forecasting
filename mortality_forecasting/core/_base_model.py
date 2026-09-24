@@ -1,49 +1,47 @@
 from abc import ABC, abstractmethod
-from typing import Self
+from typing import Literal
 
 import xarray as xr
 
-from mortality_forecasting.data_processing._dataset import MortalityDataset
 from mortality_forecasting.forecasting._dual_forecaster import DualForecaster
 from ._base_forecaster import Forecaster
 from ._commons import ForecastContainer, ParameterContainer
 from mortality_forecasting.plotting._model_plot import ModelPlotter
-from mortality_forecasting import config
-from mortality_forecasting.core._base_glm import GLMCapable
+from mortality_forecasting.models._likelihood_families import Poisson, NegativeBinomial
 
 
 class Model(ABC):
-    # TODO: since the model plotters depend on parameters_, that should be explicitely
-    # implemented as an abstract method - property, so that it enforces the idea that
-    # every model has to have it, making the plotter unbreakable
+    FAMILY_MAP = {
+        "poisson": Poisson(),
+        "negative_binomial": NegativeBinomial() 
+    }
+
     # TODO: if other models wont accept the lee_miller fix (only the lc will), its good to remove
     # it from here and just put it individually into the submodel init, calling super().__init__(seed)
     def __init__(
             self,
-            lee_miller_fix: bool = False,
-            bootstrap: int | None = None
+            method: Literal["poisson", "negative_binomial"] | str,
+            lee_miller_fix: bool
         ) -> None:
+        self.method = method
         self.lee_miller_fix = lee_miller_fix
-        self.bootstrap = bootstrap
+        self.family = self.FAMILY_MAP.get(method)
+
+    # TODO: Some centralisation of all the models
+    # and what their estimated parameters are would be nice, like dictionaries
+    # of static, period and cohort, along with their names.
+    def _check_if_fitted(self) -> None:
+        parameters = getattr(self, "parameters_", None)
+        if parameters is None:
+            raise ValueError("You need to fit the model first.")
 
     @property
     def plot(self) -> ModelPlotter:
         return ModelPlotter(self)
 
+    @property
     @abstractmethod
-    def fit(self, mortality_data: MortalityDataset, value_column: str) -> Self:
-        """Fit the model on the mortality data with a specified value column,
-        using an individually set up method.
-
-        Parameters
-        ----------
-        mortality_data
-            Instance of the MortalityDataset, with loaded data depending on
-            the model architecture, similar to 'x' in sklearn.
-        value_column
-            The chosen value column used for fitting the model,
-            similar to 'y' in sklearn.
-        """
+    def parameters_(self) -> ParameterContainer:
         pass
 
     @abstractmethod
@@ -51,6 +49,10 @@ class Model(ABC):
             self, 
             forecasted_values: ParameterContainer
         ) -> xr.DataArray:
+        pass
+
+    @abstractmethod
+    def bootstrap(self):
         pass
 
     def predict_in_sample(self) -> xr.DataArray:
@@ -92,57 +94,4 @@ class Model(ABC):
 
         predicted_mortalities = self._predict_mortalities(parameters)
 
-        return ForecastContainer(predicted_mortalities, parameters)        
-
-    # TODO: parameters_ arent enforced everywhere else, so its kind-of weird
-    # to be expecting every model to automatically have them (IT SHOULD BE ENFORCED)
-    # TODO: The @property approach is bad, doesnt really enforce it, as I always
-    # have to add the basically empty property method parameters_, but after
-    # that I still have to define the parameters_ individually in the fit
-    # TODO: Thats also one of the problems, some centralisation of all the models
-    # and what their estimated parameters are would be nice, like dictionaries
-    # of static, period and cohort, along with their names.
-    def _check_if_fitted(self) -> None:
-        parameters = getattr(self, "parameters_", None)
-        if parameters is None:
-            raise ValueError("You need to fit the model first.")
-
-    def _validate_dataset(
-            self, 
-            mortality_data: MortalityDataset, 
-            value_column: str
-        ) -> None:
-        """Check if the specified datasets are present in the MortalityDataset
-        instance (models themselves dictate what they want to check). 
-        
-        If there is more than one required grid to be checked, this method also
-        validates that every grid contains the exact same timespan.
-
-        Parameters
-        ----------
-        mortality_data
-            Instance of the MortalityDataset.
-        required_grids
-            The model specified grids this method has to check.
-        """
-        reference_grid = None
-        for grid in config.FILE_SELECTION_COUNTRY_DATA.keys():
-            selected_grid = getattr(mortality_data, grid, None)
-            if selected_grid is not None:
-                try:
-                    selected_grid[value_column]
-                except:
-                    raise ValueError(
-                        "The selected column is not available in the dataset."
-                    )
-
-                # TODO: this year-interval mismatch checker could be moved to commons,
-                # and maybe used in the manual loader, to look if the years are the same
-                if reference_grid is None:
-                    reference_grid = selected_grid
-
-                if reference_grid.year_interval != getattr(mortality_data, grid).year_interval:
-                    raise ValueError(
-                        f"Year interval mismatch between grid " \
-                        f"'{reference_grid}' and grid '{grid}'."
-                    )
+        return ForecastContainer(predicted_mortalities, parameters)

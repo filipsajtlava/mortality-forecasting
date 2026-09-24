@@ -7,7 +7,7 @@ from matplotlib.axes import Axes
 
 from mortality_forecasting import config
 from mortality_forecasting.core._base_plotter import Plotter
-from mortality_forecasting.core._commons import require_glm
+from mortality_forecasting.core._commons import assert_glm
 if TYPE_CHECKING:
     from mortality_forecasting.core._base_model import Model
 
@@ -167,7 +167,6 @@ class ModelPlotter(Plotter):
     # ==================== GLM PLOTTERS ==================== #
     # ====================================================== #
 
-    @require_glm("model")
     def plot_residual_heatmap(
             self,
             residual_type: Literal["deviance", "pearson"],
@@ -196,7 +195,6 @@ class ModelPlotter(Plotter):
             imshow_settings=imshow_settings
         )
 
-    @require_glm("model")
     def plot_residual_histogram(
             self, 
             residual_type: Literal["deviance", "pearson"],
@@ -226,7 +224,6 @@ class ModelPlotter(Plotter):
         ax.set(**(ax_defaults | ax_settings))
         return ax
 
-    @require_glm("model")
     def plot_residual_scatter(
             self,
             residual_type: Literal["deviance", "pearson"],
@@ -258,7 +255,6 @@ class ModelPlotter(Plotter):
         ax.set(**(ax_defaults | ax_settings))
         return ax
 
-    @require_glm("model")
     def plot_convergence(
             self,
             ax: Axes | None = None,
@@ -266,10 +262,11 @@ class ModelPlotter(Plotter):
             line_settings: dict[str, Any] = {}
         ) -> Axes:
         self.model._check_if_fitted()
+        assert_glm(self.model)
         ax = self._validate_and_normalize_axs(axes_user_input=ax)
         self._validate_settings_length(1, ax_settings, line_settings)
 
-        log_likelihood = self.model.log_likelihood_history_
+        log_likelihood = self.model.ll_history_
 
         line_defaults = {"marker": "o"}
         ax.plot(
