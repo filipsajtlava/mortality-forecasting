@@ -6,6 +6,7 @@ import xarray as xr
 
 from mortality_forecasting.core._base_forecaster import Forecaster
 from mortality_forecasting import config
+from mortality_forecasting.core._commons import bounds_from_simulations
 
 
 class RandomWalkWithDrift(Forecaster):
@@ -15,13 +16,17 @@ class RandomWalkWithDrift(Forecaster):
             simulations: int | None = None,
             alpha: float = 0.05,
             return_simulations: bool = False,
-            point_estimate: Literal["mean", "median"] = "median"
+            point_estimate: Literal["mean", "median"] = "median",
+            **kwargs
         ) -> None:
-        super().__init__(seed=seed)
-        self.simulations = simulations
-        self.alpha = alpha
-        self.return_simulations = return_simulations
-        self.point_estimate = point_estimate
+        super().__init__(
+            seed=seed,
+            simulations=simulations,
+            alpha=alpha,
+            return_simulations=return_simulations,
+            point_estimate=point_estimate,
+            **kwargs
+        )
 
     # TODO: keeping the outputs in dictionaries for now, more complex forecasters
     # may require special output containers, just like ParameterContainer, dont forget
@@ -40,8 +45,7 @@ class RandomWalkWithDrift(Forecaster):
             }
 
     def forecast_parameters(self, steps: int) -> xr.Dataset:
-        rng = self._normalize_seed()
-        parameters_ds = xr.Dataset()
+        forecasted_parameters = xr.Dataset()
 
         overlap_step = 0 if self.parameter_dataset.attrs["overlap"] else 1
         last_year = self.parameter_dataset.attrs["last_year"]
@@ -56,7 +60,6 @@ class RandomWalkWithDrift(Forecaster):
                     steps,
                     overlap_step,
                     pred_years,
-                    rng
                 )
             else:
                 forecasts_da = self._forecast_parameter_analytical(
@@ -67,8 +70,8 @@ class RandomWalkWithDrift(Forecaster):
                     overlap_step,
                     pred_years
                 )
-            parameters_ds[parameter_name] = forecasts_da
-        return parameters_ds
+            forecasted_parameters[parameter_name] = forecasts_da
+        return forecasted_parameters
 
     def _forecast_parameter_stochastic(
             self, 
@@ -78,9 +81,8 @@ class RandomWalkWithDrift(Forecaster):
             steps: int,
             overlap_step: int,
             pred_years: np.ndarray,
-            rng: np.random.Generator
         ) -> xr.DataArray:
-        innovations = rng.normal(
+        innovations = self.seed.normal(
             estimated_drift,
             estimated_std_of_errors,
             size=(steps, self.simulations)
@@ -98,25 +100,11 @@ class RandomWalkWithDrift(Forecaster):
 
         if self.return_simulations:
             return forecasts_da
-        
-        lower_da = forecasts_da.quantile(
-            self.alpha / 2.,
-            dim=config.SIMULATION_DIM
-        ).drop_vars("quantile", errors="ignore")
-        point_da = getattr(forecasts_da, self.point_estimate)(
-            dim=config.SIMULATION_DIM
-        )
-        upper_da = forecasts_da.quantile(
-            1 - self.alpha / 2,
-            dim=config.SIMULATION_DIM
-        ).drop_vars("quantile", errors="ignore")
 
-        combined_da = (
-            xr.concat([lower_da, point_da, upper_da], dim=config.BOUND_DIM)
-            .assign_coords({config.BOUND_DIM: ["lower", "point", "upper"]})
-            .transpose(config.YEAR_DIM, config.BOUND_DIM)
+        bounds_da = bounds_from_simulations(
+            forecasts_da, self.alpha, self.point_estimate
         )
-        return combined_da
+        return bounds_da
 
     def _forecast_parameter_analytical(
             self, 

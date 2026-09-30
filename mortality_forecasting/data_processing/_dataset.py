@@ -3,9 +3,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 
-from ._hmd_data_fetcher import DataFetcherHMD
-from ._grid import DemographicGridLoader
+from mortality_forecasting.data_processing._hmd_data_fetcher import DataFetcherHMD
+from mortality_forecasting.data_processing._grid import DemographicGridLoader
 from mortality_forecasting import config
 
 
@@ -132,7 +133,8 @@ class MortalityDataset:
     def load_from_files(
             cls,
             preprocessing: bool = True,
-            **kwargs: dict[str, str | Path | pd.DataFrame] | None
+            overlap: bool = False,
+            **kwargs: dict[str, str | Path | pd.DataFrame | xr.DataArray] | None
         ) -> Self:
         valid_metrics = list(config.FILE_SELECTION_COUNTRY_DATA.keys())
         invalid_input_keys = set(kwargs.keys()) - set(valid_metrics)
@@ -152,7 +154,8 @@ class MortalityDataset:
             if metric in kwargs and kwargs[metric] is not None:
                 new_demo_grid = DemographicGridLoader.manual_load_from_file(
                     kwargs[metric], 
-                    preprocessing
+                    preprocessing,
+                    overlap
                 )
                 setattr(dataset_instance, metric, new_demo_grid)
         return dataset_instance

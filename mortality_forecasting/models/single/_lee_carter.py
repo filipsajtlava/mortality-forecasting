@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Self
 
 import numpy as np
 import xarray as xr
@@ -12,13 +12,15 @@ class LeeCarterModel(SinglePopulationModel):
     def __init__(
             self,
             method: Literal["SVD", "poisson", "negative_binomial"],
-            num_initialization: Literal["naive", "SVD"] = "SVD",
+            num_initialization: Literal["naive", "SVD"] | ParameterContainer = "SVD",
             lee_miller_fix: bool = False,
-            ftol: float = 1e-7
+            ftol: float = 1e-7,
+            verbose: bool = False
         ) -> None:
         super().__init__(method=method, lee_miller_fix=lee_miller_fix)
         self.num_initialization = num_initialization
         self.ftol = ftol
+        self.verbose = verbose
 
     @property
     def parameters_(self):
@@ -61,9 +63,13 @@ class LeeCarterModel(SinglePopulationModel):
 
     def _fit_svd(self) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
         if self.lee_miller_fix:
-            ax = np.log(self.M).sel({
-                config.YEAR_DIM: self.mortality_data.D.year_interval["end"]
-            })
+            last_year = self.mortality_data.D.year_interval["end"]
+            override_M = getattr(self, "_jumpoff_rate_override", None)
+            if override_M is not None:
+                M_last_column = override_M.sel({config.YEAR_DIM: last_year})
+            else:
+                M_last_column = self.M.sel({config.YEAR_DIM: last_year})
+            ax = np.log(M_last_column).drop_vars(config.YEAR_DIM)
         else:
             ax = np.log(self.M).mean(dim=config.YEAR_DIM)
         Z_centered = np.log(self.M) - ax
@@ -85,7 +91,7 @@ class LeeCarterModel(SinglePopulationModel):
 
     def _initialize_parameters(
             self
-        ) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
+        ) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray, float | None]:
         ages = self.D[config.AGE_DIM].values
         years = self.D[config.YEAR_DIM].values
 
@@ -93,20 +99,24 @@ class LeeCarterModel(SinglePopulationModel):
             lc_model = LeeCarterModel(
                 method=self.num_initialization
             ).fit(self.mortality_data, self.value_column)
-            return (
-                lc_model.parameters_["ax"], 
-                lc_model.parameters_["bx"], 
-                lc_model.parameters_["kt"]
-            )
+            ax = lc_model.parameters_["ax"]
+            bx = lc_model.parameters_["bx"]
+            kt = lc_model.parameters_["kt"]
+            lambda_dispersion = self.family.dispersion_initialization()
         elif self.num_initialization == "naive":
             ax = xr.DataArray(0, coords=[(config.AGE_DIM, ages)])
             bx = xr.DataArray(0, coords=[(config.AGE_DIM, ages)])
             kt = xr.DataArray(1, coords=[(config.YEAR_DIM, years)])
+            lambda_dispersion = self.family.dispersion_initialization()
         else:
-            raise ValueError(
-                f"The selected init. method '{self.num_initialization}' is unavailable."
+            ax = self.num_initialization.get("ax", None)
+            bx = self.num_initialization.get("bx", None)
+            kt = self.num_initialization.get("kt", None)
+            lambda_init = self.num_initialization.get("lambda_dispersion", None)
+            lambda_dispersion = self.family.dispersion_initialization(
+                init=float(lambda_init) if lambda_init is not None else None
             )
-        return ax, bx, kt
+        return ax, bx, kt, lambda_dispersion
 
     def _compute_deaths(
             self, 
@@ -119,12 +129,11 @@ class LeeCarterModel(SinglePopulationModel):
     def _fit_glm(
             self
         ) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray, float | None]:
-        ax, bx, kt = self._initialize_parameters()
-        # Initialization in NegativeBinomial approach, Poisson ignores it
-        lambda_dispersion, lambda_dispersion_new = 1, None 
+        ax, bx, kt, lambda_dispersion = self._initialize_parameters()
         self.ll_history_ = [
             self.family.compute_log_likelihood(
                 D=self.D,
+                E=self.E,
                 D_pred=self._compute_deaths(ax, bx, kt),
                 lambda_dispersion=lambda_dispersion
             )
@@ -160,7 +169,9 @@ class LeeCarterModel(SinglePopulationModel):
                 bx + (kt * (self.D - num_factor * D_pred)).sum(dim=config.YEAR_DIM) / 
                 (denom_factor * D_pred * kt*kt).sum(dim=config.YEAR_DIM)
             )
-            bx_new = bx_new / bx_new.sum()
+            bx_sum = bx_new.sum()
+            bx_new = bx_new / bx_sum
+            kt = kt * bx_sum
 
             D_pred = self._compute_deaths(ax_new, bx_new, kt)
             num_factor, denom_factor = self.family.numerical_optimization_factor(
@@ -172,7 +183,9 @@ class LeeCarterModel(SinglePopulationModel):
                 kt + (bx_new * (self.D - num_factor * D_pred)).sum(dim=config.AGE_DIM) / 
                 (denom_factor * D_pred * bx_new*bx_new).sum(dim=config.AGE_DIM)
             )
-            kt_new = kt_new - kt_new.mean()
+            kt_mean = kt_new.mean()
+            kt_new = kt_new - kt_mean
+            ax_new = ax_new + bx_new * kt_mean
 
             D_pred = self._compute_deaths(ax_new, bx_new, kt_new)
             lambda_dispersion_new = self.family.update_dispersion(
@@ -183,17 +196,19 @@ class LeeCarterModel(SinglePopulationModel):
             self.ll_history_.append(
                 self.family.compute_log_likelihood(
                     D=self.D,
+                    E=self.E,
                     D_pred=D_pred,
                     lambda_dispersion=lambda_dispersion_new
                 )
             )
             prev_ll = self.ll_history_[-2]
             curr_ll = self.ll_history_[-1]
-
             if abs(prev_ll) < 1e-10:
                 likelihood_change = abs(curr_ll - prev_ll)
             else:
                 likelihood_change = abs((curr_ll - prev_ll) / prev_ll)
+            if self.verbose:
+                print(f"iteration {iteration}: log-change: {likelihood_change}")
 
             ax = ax_new
             bx = bx_new
@@ -209,12 +224,16 @@ class LeeCarterModel(SinglePopulationModel):
 
         if self.lee_miller_fix:
             last_year = self.mortality_data.D.year_interval["end"]
-            M_last_column = self.M.sel({config.YEAR_DIM: last_year})
+            override_M = getattr(self, "_jumpoff_rate_override", None)
+            if override_M is not None:
+                M_last_column = override_M.sel({config.YEAR_DIM: last_year})
+            else:
+                M_last_column = self.M.sel({config.YEAR_DIM: last_year})
             ax = (
                 np.log(M_last_column) - bx * kt.sel({config.YEAR_DIM: last_year})
             ).drop_vars(config.YEAR_DIM)
 
-        return (ax, bx, kt) if lambda_dispersion_new is None else (ax, bx, kt, lambda_dispersion_new)
+        return (ax, bx, kt) if lambda_dispersion is None else (ax, bx, kt, lambda_dispersion)
 
     def _predict_mortalities(
             self, 
@@ -225,6 +244,11 @@ class LeeCarterModel(SinglePopulationModel):
             forecasted_values.static.bx * forecasted_values.period.kt
         )
         return np.exp(log_M_predictions)
+
+    # TODO: if other models will use the lee-miller correction, this should be moved into the parent class 
+    def _set_jumpoff_anchor(self, rate: xr.DataArray | None) -> Self:
+        self._jumpoff_rate_override = rate
+        return self
 
     # +=======================================+ #
     #                 RESIDUALS                 #
@@ -248,10 +272,3 @@ class LeeCarterModel(SinglePopulationModel):
             lambda_dispersion=self.parameters_.get("lambda_dispersion")
         )
         return (self.D - D_pred) / np.sqrt(variance)
-
-    # +=======================================+ #
-    #                  OTHER                    #         
-    # +=======================================+ #
-
-    def bootstrap(self, type: Literal["parametric"]):
-        self._check_if_fitted()

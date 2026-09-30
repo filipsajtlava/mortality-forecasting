@@ -3,11 +3,11 @@ from typing import Literal
 
 import xarray as xr
 
-from mortality_forecasting.forecasting._dual_forecaster import DualForecaster
-from ._base_forecaster import Forecaster
-from ._commons import ForecastContainer, ParameterContainer
+from mortality_forecasting.core._commons import ParameterContainer, ForecastContainer
 from mortality_forecasting.plotting._model_plot import ModelPlotter
 from mortality_forecasting.models._likelihood_families import Poisson, NegativeBinomial
+from mortality_forecasting.core._base_forecaster import Forecaster
+from mortality_forecasting.forecasting._dual_forecaster import DualForecaster
 
 
 class Model(ABC):
@@ -45,14 +45,14 @@ class Model(ABC):
         pass
 
     @abstractmethod
+    def _compute_deaths(self, **kwargs) -> xr.DataArray:
+        pass
+
+    @abstractmethod
     def _predict_mortalities(
             self, 
             forecasted_values: ParameterContainer
         ) -> xr.DataArray:
-        pass
-
-    @abstractmethod
-    def bootstrap(self):
         pass
 
     def predict_in_sample(self) -> xr.DataArray:
@@ -60,38 +60,11 @@ class Model(ABC):
         self._check_if_fitted()
         return self._predict_mortalities(self.parameters_)
 
+    @abstractmethod
     def forecast(
             self, 
             forecaster: Forecaster | DualForecaster,
-            steps: int
+            steps: int,
+            bootstrap: Literal["parametric", "semi_parametric"] | None = None
         ) -> ForecastContainer:
-        self._check_if_fitted()
-
-        # TODO: I genuinely dislike how this is done, other way of approaching
-        # this would be by calling a different function, something like
-        # fit_forecast, that does both at once, and has different definitions
-        # for DualForecaster and Forecaster, so they handle it internally, out
-        # of the model
-        # TODO: just polymorph this I cba, redo forecasters internally and have
-        # this like a super simple interface
-        if isinstance(forecaster, Forecaster):
-            forecaster.fit(self.parameters_.period)
-            period_ds = forecaster.forecast_parameters(steps)
-            parameters = ParameterContainer(
-                static=self.parameters_.static,
-                period=period_ds
-            )
-        elif isinstance(forecaster, DualForecaster):
-            forecaster.fit(self.parameters_)
-            period_ds, cohort_ds = forecaster.forecast_parameters(steps)
-            return ParameterContainer(
-                static=self.parameters_.static,
-                period=period_ds,
-                cohort=cohort_ds
-            )
-        else:
-            raise ValueError("Please enter a valid forecaster instance.")
-
-        predicted_mortalities = self._predict_mortalities(parameters)
-
-        return ForecastContainer(predicted_mortalities, parameters)
+        pass

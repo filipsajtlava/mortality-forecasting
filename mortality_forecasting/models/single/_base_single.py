@@ -1,10 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import Self
+from typing import Self, Literal
 
 from mortality_forecasting.core._base_model import Model
 from mortality_forecasting.data_processing._dataset import MortalityDataset
 from mortality_forecasting import config
-from mortality_forecasting.core._commons import validate_value_column
+from mortality_forecasting.core._commons import validate_value_column, ForecastContainer, ParameterContainer
+from mortality_forecasting.core._base_forecaster import Forecaster
+from mortality_forecasting.forecasting._dual_forecaster import DualForecaster
+from mortality_forecasting.forecasting._bootstrapper import Bootstrapper
+
 
 class SinglePopulationModel(Model, ABC):
     @abstractmethod
@@ -36,6 +40,38 @@ class SinglePopulationModel(Model, ABC):
         self._fit()
         return self
 
+    def forecast(
+            self, 
+            forecaster: Forecaster | DualForecaster,
+            steps: int,
+            bootstrap: Literal["parametric", "semi_parametric"] | None = None
+        ) -> ForecastContainer:
+        self._check_if_fitted()
+
+        if bootstrap is not None:
+            bootstrapper = Bootstrapper(method=bootstrap)
+            return bootstrapper.run(model=self, forecaster=forecaster, steps=steps)
+
+        if isinstance(forecaster, Forecaster):
+            forecaster.fit(self.parameters_.period)
+            period_ds = forecaster.forecast_parameters(steps)
+            parameters = ParameterContainer(
+                static=self.parameters_.static,
+                period=period_ds
+            )
+        elif isinstance(forecaster, DualForecaster):
+            forecaster.fit(self.parameters_)
+            period_ds, cohort_ds = forecaster.forecast_parameters(steps)
+            parameters = ParameterContainer(
+                static=self.parameters_.static,
+                period=period_ds,
+                cohort=cohort_ds
+            )
+        else:
+            raise ValueError("Please enter a valid forecaster instance.")
+
+        predicted_mortalities = self._predict_mortalities(parameters)
+        return ForecastContainer(predicted_mortalities, parameters)
 
     def _validate_dataset(
             self,
@@ -43,7 +79,7 @@ class SinglePopulationModel(Model, ABC):
             value_column: str
         ) -> None:
         """Check if the specified datasets are present in the MortalityDataset
-        instance. 
+        instance (only exposures and deaths). 
         
         If there is more than one required grid to be checked, this method also
         validates that every grid contains the exact same timespan.
@@ -56,11 +92,11 @@ class SinglePopulationModel(Model, ABC):
             Specified value column that has to appear in the dataset.
         """
         reference_grid = None
-        for grid in config.FILE_SELECTION_COUNTRY_DATA.keys():
+        for grid in config.REQUIRED_DATA_FOR_MODELS:
             selected_grid = getattr(mortality_data, grid, None)
             if selected_grid is None:
                 raise ValueError(
-                    f"Dataset does not contain the grid '{selected_grid}'."
+                    f"Dataset does not contain the grid '{grid}'."
                 )
             else:
                 try:

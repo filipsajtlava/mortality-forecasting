@@ -9,9 +9,12 @@ FILE_SELECTION_COUNTRY_DATA = {
     "E": "Exposures_1x1.txt",
     "D": "Deaths_1x1.txt"
 }
+REQUIRED_DATA_FOR_MODELS = ["E", "D"]
 
 VALUE_COLUMNS = ["Female", "Male", "Total"]
 MAXIMUM_LC_ITERATIONS = 300
+
+LAMBDA_INITIALIZATION = 1.0
 
 AGE_DIM = "Age"
 YEAR_DIM = "Year"

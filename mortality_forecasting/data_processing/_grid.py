@@ -135,14 +135,15 @@ class DemographicGridLoader:
             f"and {config.YEAR_DIM} <= {ending_year} and {config.AGE_DIM} <= {maximum_age}"
         )
         data = data.query(loading_query)
-        preprocessed_data = cls.preprocessing(data)
+        preprocessed_data = cls._preprocessing(data)
         return DemographicGrid(preprocessed_data)
 
     @classmethod
     def manual_load_from_file(
             cls,
-            input_dict: dict[str, str | Path | pd.DataFrame],
-            preprocessing: bool
+            input_dict: dict[str, str | Path | pd.DataFrame, xr.DataArray],
+            preprocessing: bool,
+            overlap: bool
         ) -> DemographicGrid:
         dataframe_dict = cls._normalize_manual_input(input_dict)
         long_formats_to_concatenate = []
@@ -162,13 +163,13 @@ class DemographicGridLoader:
         )
 
         if preprocessing:
-            data = cls.preprocessing(data)
-        return DemographicGrid(data=data)
+            data = cls._preprocessing(data)
+        return DemographicGrid(data=data, overlap=overlap)
 
     @classmethod
     def _normalize_manual_input(
             cls,
-            input_dict: dict[str, str | Path | pd.DataFrame]
+            input_dict: dict[str, str | Path | pd.DataFrame | xr.DataArray]
         ) ->  dict[str, pd.DataFrame]:
         normalized = {}
         for value_column, user_input in input_dict.items():
@@ -182,6 +183,8 @@ class DemographicGridLoader:
                         "Please enter a valid path to a '.csv' file."
                     )
                 normalized[value_column] = dataset
+            elif isinstance(user_input, xr.DataArray):
+                normalized[value_column] = user_input.to_pandas()
             else:
                 normalized[value_column] = user_input
         return normalized
@@ -200,7 +203,7 @@ class DemographicGridLoader:
                 )    
 
     @classmethod
-    def preprocessing(
+    def _preprocessing(
             cls, 
             raw_df: pd.DataFrame
         ) -> pd.DataFrame:

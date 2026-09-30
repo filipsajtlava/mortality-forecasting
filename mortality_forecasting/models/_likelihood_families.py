@@ -3,12 +3,15 @@ from abc import ABC, abstractmethod
 import numpy as np
 import xarray as xr
 
+from mortality_forecasting import config
+
 
 class LikelihoodFamily(ABC):
     @abstractmethod
     def compute_log_likelihood(
             self, 
-            D: xr.DataArray, 
+            D: xr.DataArray,
+            E: xr.DataArray,
             D_pred: xr.DataArray,
             **kwargs
         ) -> float:
@@ -41,6 +44,10 @@ class LikelihoodFamily(ABC):
         pass
 
     @abstractmethod
+    def dispersion_initialization(self, **kwargs) -> float | None:
+        pass
+
+    @abstractmethod
     def update_dispersion(
             self,
             D: xr.DataArray,
@@ -49,16 +56,26 @@ class LikelihoodFamily(ABC):
         ) -> float | None:
         pass
 
+    @abstractmethod
+    def sample_from_distribution(
+            self, 
+            D_pred: xr.DataArray, 
+            seed: np.random.Generator,
+            **kwargs
+        ) -> xr.DataArray:
+        pass
+
 
 class Poisson(LikelihoodFamily):
     def compute_log_likelihood(
             self, 
             D: xr.DataArray, 
+            E: xr.DataArray,
             D_pred: xr.DataArray,
             **kwargs
         ) -> float:
         return float((
-            D * np.log(D_pred) - D_pred
+            D * np.log(D_pred / E) - D_pred
         ).sum())
 
     def get_variance(self, D_pred: xr.DataArray, **kwargs) -> xr.DataArray:
@@ -82,6 +99,9 @@ class Poisson(LikelihoodFamily):
         ) -> tuple[float, float]:
         return 1.0, 1.0
 
+    def dispersion_initialization(self, **kwargs) -> None:
+        return None
+
     def update_dispersion(
             self,
             D: xr.DataArray,
@@ -90,11 +110,24 @@ class Poisson(LikelihoodFamily):
         ) -> None:
         return None
 
+    def sample_from_distribution(
+            self, 
+            D_pred: xr.DataArray, 
+            seed: np.random.Generator,
+            **kwargs
+        ) -> xr.DataArray:
+        return xr.apply_ufunc(
+            seed.poisson,
+            D_pred,
+            keep_attrs=True
+        )
+
 
 class NegativeBinomial(LikelihoodFamily):
     def compute_log_likelihood(
             self, 
-            D: xr.DataArray, 
+            D: xr.DataArray,
+            E: xr.DataArray,
             D_pred: xr.DataArray,
             lambda_dispersion: float,
             **kwargs
@@ -141,8 +174,14 @@ class NegativeBinomial(LikelihoodFamily):
             **kwargs
         ) -> tuple[xr.DataArray, xr.DataArray]:
         num_factor = (lambda_dispersion + D) / (lambda_dispersion + D_pred)
-        denom_factor = lambda_dispersion * (lambda_dispersion + D) / ((lambda_dispersion + D_pred) ** 2)
+        denom_factor = (
+            lambda_dispersion * (lambda_dispersion + D) / 
+            ((lambda_dispersion + D_pred) ** 2)
+        )
         return num_factor, denom_factor
+
+    def dispersion_initialization(self, init: float | None = None, **kwargs) -> float:
+        return init if init else config.LAMBDA_INITIALIZATION
 
     def update_dispersion(
             self,
@@ -169,4 +208,19 @@ class NegativeBinomial(LikelihoodFamily):
                 (2 * D_pred + lambda_dispersion - D) / (lambda_dispersion + D_pred) ** 2 
             ).sum()
         )
+        lambda_dispersion_new = max(lambda_dispersion_new, 1e-2)
         return lambda_dispersion_new
+
+    def sample_from_distribution(
+            self, 
+            D_pred: xr.DataArray,
+            seed: np.random.Generator,
+            lambda_dispersion: float,
+            **kwargs
+        ) -> xr.DataArray:
+        return xr.apply_ufunc(
+            seed.negative_binomial,
+            lambda_dispersion,
+            lambda_dispersion / (lambda_dispersion + D_pred),
+            keep_attrs=True,
+        )

@@ -32,20 +32,20 @@ def bounds_from_simulations(
     ) -> xr.DataArray:
 
     lower_da = da.quantile(
-        alpha / 2.,
+        alpha / 2.0,
         dim=config.SIMULATION_DIM
     ).drop_vars("quantile", errors="ignore")
     point_da = getattr(da, point_estimate)(
         dim=config.SIMULATION_DIM
     )
     upper_da = da.quantile(
-        1 - alpha / 2,
+        1 - alpha / 2.0,
         dim=config.SIMULATION_DIM
     ).drop_vars("quantile", errors="ignore")
     bounds_da = (
         xr.concat([lower_da, point_da, upper_da], dim=config.BOUND_DIM)
         .assign_coords({config.BOUND_DIM: ["lower", "point", "upper"]})
-        .transpose(config.YEAR_DIM, config.BOUND_DIM, ...)
+        .transpose(config.AGE_DIM, config.YEAR_DIM, config.BOUND_DIM, ..., missing_dims="ignore")
     )
     return bounds_da
 
@@ -115,15 +115,6 @@ class ForecastContainer:
     """A container class for forecasted parameters along with the mortality,
     rates, allowing the user and plotting devices to access the same 
     exact structure everywhere.
-
-    Parameters
-    ----------
-    static
-        Parameters which are not forecasted.
-    period
-        Forecasted period-like parameters.
-    cohort, optional
-        Forecastes cohort-like parameters, by default None.
     """
     mortality_rates_: xr.DataArray
     parameters_: ParameterContainer
