@@ -14,18 +14,14 @@ class RandomWalkWithDrift(Forecaster):
             self, 
             seed: int | np.random.Generator | None = None,
             simulations: int | None = None,
-            alpha: float = 0.05,
             return_simulations: bool = False,
-            point_estimate: Literal["mean", "median"] = "median",
-            **kwargs
+            point_estimate: Literal["mean", "median"] = "median"
         ) -> None:
         super().__init__(
             seed=seed,
             simulations=simulations,
-            alpha=alpha,
             return_simulations=return_simulations,
             point_estimate=point_estimate,
-            **kwargs
         )
 
     # TODO: keeping the outputs in dictionaries for now, more complex forecasters
@@ -44,7 +40,8 @@ class RandomWalkWithDrift(Forecaster):
                 "std_of_errors_": std_of_errors_
             }
 
-    def forecast_parameters(self, steps: int) -> xr.Dataset:
+    def forecast_parameters(self, steps: int, alpha: float) -> xr.Dataset:
+        self.alpha = alpha
         forecasted_parameters = xr.Dataset()
 
         overlap_step = 0 if self.parameter_dataset.attrs["overlap"] else 1

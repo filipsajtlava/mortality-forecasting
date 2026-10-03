@@ -12,32 +12,15 @@ class ForecastEvaluator:
     def __init__(
             self, 
             actual: xr.DataArray,
-            forecast: ForecastContainer | xr.DataArray,
-            point_estimate: Literal["median", "mean"] = "median"
+            forecast: ForecastContainer
         ) -> None:
         self.actual = actual
-        self.forecast = self._normalize_forecasts(forecast)
-        self.point_estimate = point_estimate
+        self.forecast = forecast
+        self.point_estimate = self._normalize_point_estimate()
 
-    def _normalize_forecasts(
-            self, 
-            forecast: ForecastContainer | xr.DataArray
-        ) -> xr.DataArray:
-        if isinstance(forecast, ForecastContainer):
-            return forecast.mortality_rates_
-        else:
-            return forecast
-
-    def _aggregate_forecasts(self) -> np.ndarray:
-        if config.BOUND_DIM in self.forecast.dims:
-            clean_data = self.forecast.sel({config.BOUND_DIM: "point"})
-        elif config.SIMULATION_DIM in self.forecast.dims:
-            clean_data = getattr(self.forecast, self.point_estimate)(
-                dim=config.SIMULATION_DIM
-            )
-        else:
-            clean_data = self.forecast
-        return clean_data.to_numpy()
+    def _normalize_point_estimate(self) -> np.ndarray:
+        point_da = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "point"})
+        return point_da.to_numpy()
 
     @property
     def plot(self) -> EvaluatorPlotter:
@@ -50,8 +33,7 @@ class ForecastEvaluator:
         -------
             MAE error.
         """
-        agg_forecast = self._aggregate_forecasts()
-        abs_errors = np.abs(self.actual - agg_forecast)
+        abs_errors = np.abs(self.actual - self.point_estimate)
         return float(abs_errors.mean())
 
     def log_rmse(self) -> float:
@@ -61,8 +43,7 @@ class ForecastEvaluator:
         -------
             RMSE error.
         """
-        agg_forecast = self._aggregate_forecasts()
-        squared_errors = (np.log(agg_forecast) - np.log(self.actual)) ** 2
+        squared_errors = (np.log(self.point_estimate) - np.log(self.actual)) ** 2
         return float(np.sqrt(squared_errors.mean()))    
 
     def mase(self, training_data: xr.DataArray) -> xr.DataArray:
@@ -73,9 +54,8 @@ class ForecastEvaluator:
         -------
             MASE error.
         """
-        agg_forecast = self._aggregate_forecasts()
         abs_mean_errors = np.abs(
-            self.actual - agg_forecast
+            self.actual - self.point_estimate
         ).mean(dim=config.YEAR_DIM)
 
         training_diff_error = np.abs(
@@ -91,12 +71,35 @@ class ForecastEvaluator:
         -------
             MSEr error.
         """
-        agg_forecast = self._aggregate_forecasts()
         mean_error_preds = (
-            self.actual - agg_forecast
+            self.actual - self.point_estimate
         ).mean(dim=config.YEAR_DIM)
 
         training_diff_error = np.abs(
             training_data.diff(dim=config.YEAR_DIM)
         ).mean(dim=config.YEAR_DIM)
         return mean_error_preds / training_diff_error
+
+    def rcs(self) -> xr.DataArray:
+        upper_quantiles = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "upper"})
+        lower_quantiles = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "lower"})
+        rcs = (
+            (self.actual <= upper_quantiles) & (self.actual >= lower_quantiles)
+        ).sum(dim=config.YEAR_DIM) / (
+            self.actual.sizes[config.YEAR_DIM]
+        )
+        return rcs
+
+    def mws(self):
+        upper_quantiles = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "upper"}).drop_vars(config.BOUND_DIM)
+        lower_quantiles = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "lower"}).drop_vars(config.BOUND_DIM)
+        alpha = self.forecast.attrs["alpha"]
+
+        diff1 = lower_quantiles - self.actual
+        diff2 = self.actual - upper_quantiles
+        zeros = xr.zeros_like(diff1)
+        penalty = xr.concat([diff1, diff2, zeros], dim="arrays").max(dim="arrays")
+
+        interval_width = (upper_quantiles - lower_quantiles).sum(dim=config.YEAR_DIM)
+        mws = interval_width + (2 / alpha) * penalty.sum(dim=config.YEAR_DIM)
+        return mws

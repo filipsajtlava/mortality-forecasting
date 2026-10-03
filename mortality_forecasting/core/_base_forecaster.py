@@ -10,18 +10,13 @@ class Forecaster(ABC):
             self, 
             seed: int | np.random.Generator | None = None,
             simulations: int | None = None,
-            alpha: float = 0.05,
             return_simulations: bool = False,
-            point_estimate: Literal["mean", "median"] = "median",
-            **kwargs
+            point_estimate: Literal["mean", "median"] = "median"
         ) -> None:
         self.seed = self._normalize_seed(seed)
         self.simulations = simulations
-        self.alpha = alpha
         self.return_simulations = return_simulations
         self.point_estimate =point_estimate
-
-        self._jump_off_anchor = kwargs.pop("jump_off_anchor", False)
 
     def _normalize_seed(self, seed: int | np.random.Generator | None) -> np.random.Generator:
         """Normalizes the entered seed into a single np.random.Generator instance
@@ -40,5 +35,5 @@ class Forecaster(ABC):
         pass
 
     @abstractmethod
-    def forecast_parameters(self, steps: int, simulations: int) -> xr.Dataset:
+    def forecast_parameters(self, steps: int, alpha: float) -> xr.Dataset:
         pass

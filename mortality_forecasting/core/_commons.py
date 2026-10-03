@@ -118,3 +118,4 @@ class ForecastContainer:
     """
     mortality_rates_: xr.DataArray
     parameters_: ParameterContainer
+    attrs: dict | None = None

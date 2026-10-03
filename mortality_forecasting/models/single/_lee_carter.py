@@ -14,6 +14,9 @@ class LeeCarterModel(SinglePopulationModel):
             method: Literal["SVD", "poisson", "negative_binomial"],
             num_initialization: Literal["naive", "SVD"] | ParameterContainer = "SVD",
             lee_miller_fix: bool = False,
+            bootstrap_anchor: Literal["partial", "full"] = "partial", # TODO: this is only used by the
+            # bootstrapper to give it the information about the anchor type, that cant be the proper 
+            # approach of doing this, id suggest having a boostrapper instance
             ftol: float = 1e-7,
             verbose: bool = False
         ) -> None:
@@ -21,6 +24,7 @@ class LeeCarterModel(SinglePopulationModel):
         self.num_initialization = num_initialization
         self.ftol = ftol
         self.verbose = verbose
+        self.bootstrap_anchor = bootstrap_anchor
 
     @property
     def parameters_(self):

@@ -17,17 +17,16 @@ from mortality_forecasting.core._commons import (
 class Bootstrapper:
     def __init__(
             self, 
-            #TODO: ignores the method right now, only doing parametric bootstrap
-            method: Literal["parametric", "semi_parametric"], 
+            alpha: float
         ) -> None:
-        self.method = method
+        self.alpha = alpha
 
     # TODO: this wont run for dual forecaster
     def run(
             self, 
             model: Model, 
             forecaster: Forecaster, 
-            steps: int
+            steps: int,
         ) -> ForecastContainer:
         assert_glm(model)
         self._assert_simulations_present(forecaster)
@@ -38,7 +37,7 @@ class Bootstrapper:
         parameters = model.parameters_
         overlap=parameters.period.attrs["overlap"]
         D_pred = model.predict_in_sample() * model.E
-        jump_off_anchor = model.M if forecaster._jump_off_anchor else None
+        jump_off_anchor = model.M if model.bootstrap_anchor == "full" else None
 
         for loop_rng in forecaster.seed.spawn(forecaster.simulations):
             rng_sample, rng_forecast = loop_rng.spawn(2)
@@ -97,7 +96,7 @@ class Bootstrapper:
                 ).assign_coords({config.SIMULATION_DIM: sim_coords})
                 if not forecaster.return_simulations:
                     concat_params = bounds_from_simulations(
-                        concat_params, forecaster.alpha, forecaster.point_estimate
+                        concat_params, self.alpha, forecaster.point_estimate
                     )
                 param_types[param_type] = concat_params
         
@@ -108,7 +107,7 @@ class Bootstrapper:
         ).assign_coords({config.SIMULATION_DIM: sim_coords})
         if not forecaster.return_simulations:
             concat_mortalities = bounds_from_simulations(
-                concat_mortalities, forecaster.alpha, forecaster.point_estimate
+                concat_mortalities, self.alpha, forecaster.point_estimate
             )
 
         return ForecastContainer(
@@ -117,7 +116,8 @@ class Bootstrapper:
                 static=param_types["static"],
                 period=param_types["period"],
                 cohort=param_types["cohort"]
-            )
+            ),
+            attrs={"alpha": self.alpha}
         )
 
     def _assert_simulations_present(self, forecaster: Forecaster):

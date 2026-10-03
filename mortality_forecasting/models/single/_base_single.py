@@ -44,24 +44,25 @@ class SinglePopulationModel(Model, ABC):
             self, 
             forecaster: Forecaster | DualForecaster,
             steps: int,
-            bootstrap: Literal["parametric", "semi_parametric"] | None = None
+            alpha: float = 0.05,
+            bootstrap: bool = False
         ) -> ForecastContainer:
         self._check_if_fitted()
 
-        if bootstrap is not None:
-            bootstrapper = Bootstrapper(method=bootstrap)
+        if bootstrap is True:
+            bootstrapper = Bootstrapper(alpha=alpha)
             return bootstrapper.run(model=self, forecaster=forecaster, steps=steps)
 
         if isinstance(forecaster, Forecaster):
             forecaster.fit(self.parameters_.period)
-            period_ds = forecaster.forecast_parameters(steps)
+            period_ds = forecaster.forecast_parameters(steps, alpha)
             parameters = ParameterContainer(
                 static=self.parameters_.static,
                 period=period_ds
             )
         elif isinstance(forecaster, DualForecaster):
-            forecaster.fit(self.parameters_)
-            period_ds, cohort_ds = forecaster.forecast_parameters(steps)
+            forecaster.fit(self.parameters_, alpha)
+            period_ds, cohort_ds = forecaster.forecast_parameters(steps, alpha)
             parameters = ParameterContainer(
                 static=self.parameters_.static,
                 period=period_ds,
@@ -71,7 +72,11 @@ class SinglePopulationModel(Model, ABC):
             raise ValueError("Please enter a valid forecaster instance.")
 
         predicted_mortalities = self._predict_mortalities(parameters)
-        return ForecastContainer(predicted_mortalities, parameters)
+        return ForecastContainer(
+            mortality_rates_=predicted_mortalities,
+            parameters_=parameters, 
+            attrs={"alpha": alpha}
+        )
 
     def _validate_dataset(
             self,
