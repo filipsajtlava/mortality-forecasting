@@ -15,7 +15,6 @@ class DemographicGrid:
             data: pd.DataFrame,
             overlap: bool = False
         ) -> None:
-
         self.data = data
         self.overlap = overlap
         self.year_interval = self._compute_year_interval()

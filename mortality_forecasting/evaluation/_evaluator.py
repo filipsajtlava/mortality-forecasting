@@ -12,15 +12,17 @@ class ForecastEvaluator:
     def __init__(
             self, 
             actual: xr.DataArray,
-            forecast: ForecastContainer
+            forecast_container: ForecastContainer
         ) -> None:
         self.actual = actual
-        self.forecast = forecast
+        self.forecast_container = forecast_container
         self.point_estimate = self._normalize_point_estimate()
 
-    def _normalize_point_estimate(self) -> np.ndarray:
-        point_da = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "point"})
-        return point_da.to_numpy()
+    def _normalize_point_estimate(self) -> xr.DataArray:
+        point_da = self.forecast_container.mortality_rates_.sel(
+            {config.BOUND_DIM: "point"}
+        )
+        return point_da.drop_vars(config.BOUND_DIM)
 
     @property
     def plot(self) -> EvaluatorPlotter:
@@ -81,8 +83,12 @@ class ForecastEvaluator:
         return mean_error_preds / training_diff_error
 
     def rcs(self) -> xr.DataArray:
-        upper_quantiles = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "upper"})
-        lower_quantiles = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "lower"})
+        upper_quantiles = self.forecast_container.mortality_rates_.sel(
+            {config.BOUND_DIM: "upper"}
+        )
+        lower_quantiles = self.forecast_container.mortality_rates_.sel(
+            {config.BOUND_DIM: "lower"}
+        )
         rcs = (
             (self.actual <= upper_quantiles) & (self.actual >= lower_quantiles)
         ).sum(dim=config.YEAR_DIM) / (
@@ -91,9 +97,13 @@ class ForecastEvaluator:
         return rcs
 
     def mws(self):
-        upper_quantiles = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "upper"}).drop_vars(config.BOUND_DIM)
-        lower_quantiles = self.forecast.mortality_rates_.sel({config.BOUND_DIM: "lower"}).drop_vars(config.BOUND_DIM)
-        alpha = self.forecast.attrs["alpha"]
+        upper_quantiles = self.forecast_container.mortality_rates_.sel(
+            {config.BOUND_DIM: "upper"}
+        ).drop_vars(config.BOUND_DIM)
+        lower_quantiles = self.forecast_container.mortality_rates_.sel(
+            {config.BOUND_DIM: "lower"}
+        ).drop_vars(config.BOUND_DIM)
+        alpha = self.forecast_container.attrs["alpha"]
 
         diff1 = lower_quantiles - self.actual
         diff2 = self.actual - upper_quantiles

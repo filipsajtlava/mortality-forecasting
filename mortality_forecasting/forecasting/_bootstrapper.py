@@ -1,9 +1,9 @@
-from typing import Literal
+from __future__ import annotations
+from typing import Literal, TYPE_CHECKING
 
 import xarray as xr
 
 from mortality_forecasting.core._base_forecaster import Forecaster
-from mortality_forecasting.core._base_model import Model
 from mortality_forecasting.data_processing._dataset import MortalityDataset
 from mortality_forecasting import config
 from mortality_forecasting.core._commons import (
@@ -12,14 +12,19 @@ from mortality_forecasting.core._commons import (
     ParameterContainer,
     assert_glm
 )
+if TYPE_CHECKING:
+    from mortality_forecasting.core._base_model import Model
+
 
 
 class Bootstrapper:
     def __init__(
-            self, 
-            alpha: float
+            self,
+            bootstrap_anchor: Literal["partial", "full"] = "partial",
+            return_residuals: Literal["deviance", "pearson"] | None = None
         ) -> None:
-        self.alpha = alpha
+        self.bootstrap_anchor = bootstrap_anchor
+        self.return_residuals = return_residuals
 
     # TODO: this wont run for dual forecaster
     def run(
@@ -27,6 +32,7 @@ class Bootstrapper:
             model: Model, 
             forecaster: Forecaster, 
             steps: int,
+            alpha: float
         ) -> ForecastContainer:
         assert_glm(model)
         self._assert_simulations_present(forecaster)
@@ -34,10 +40,13 @@ class Bootstrapper:
         param_forecasts = []
         mortality_forecasts = []
 
+        in_sample_residuals = [] if self.return_residuals is not None else None
+        residual_method = f"{self.return_residuals}_residuals"
+
         parameters = model.parameters_
         overlap=parameters.period.attrs["overlap"]
         D_pred = model.predict_in_sample() * model.E
-        jump_off_anchor = model.M if model.bootstrap_anchor == "full" else None
+        jump_off_anchor = model.M if self.bootstrap_anchor == "full" else None
 
         for loop_rng in forecaster.seed.spawn(forecaster.simulations):
             rng_sample, rng_forecast = loop_rng.spawn(2)
@@ -59,6 +68,10 @@ class Bootstrapper:
                 verbose=model.verbose
             )._set_jumpoff_anchor(jump_off_anchor).fit(data, model.value_column)
 
+            if self.return_residuals is not None:
+                residuals = getattr(new_model, residual_method)
+                in_sample_residuals.append(residuals)
+
             forecaster_single = type(forecaster)(
                 seed=rng_forecast,
                 simulations=1,
@@ -75,14 +88,18 @@ class Bootstrapper:
         return self._concatenate_outputs(
             param_forecasts,
             mortality_forecasts,
-            forecaster
+            in_sample_residuals,
+            forecaster,
+            alpha
         )
 
     def _concatenate_outputs(
             self,
             forecasted_parameters: list[ParameterContainer],
             forecasted_mortalities: list[xr.DataArray],
-            forecaster: Forecaster
+            residuals: list[xr.DataArray] | None,
+            forecaster: Forecaster,
+            alpha: float
         ) -> ForecastContainer:
         param_types = {"static": None, "period": None, "cohort": None}
         sim_coords = range(1, forecaster.simulations + 1) 
@@ -96,7 +113,7 @@ class Bootstrapper:
                 ).assign_coords({config.SIMULATION_DIM: sim_coords})
                 if not forecaster.return_simulations:
                     concat_params = bounds_from_simulations(
-                        concat_params, self.alpha, forecaster.point_estimate
+                        concat_params, alpha, forecaster.point_estimate
                     )
                 param_types[param_type] = concat_params
         
@@ -105,9 +122,21 @@ class Bootstrapper:
             dim=config.SIMULATION_DIM,
             data_vars="all"
         ).assign_coords({config.SIMULATION_DIM: sim_coords})
+        if residuals is not None:
+            concat_residuals = xr.concat(
+                residuals,
+                dim=config.SIMULATION_DIM,
+                data_vars="all"
+            ).assign_coords({config.SIMULATION_DIM: sim_coords})
+        else:
+            concat_residuals = None
+
         if not forecaster.return_simulations:
             concat_mortalities = bounds_from_simulations(
-                concat_mortalities, self.alpha, forecaster.point_estimate
+                concat_mortalities, alpha, forecaster.point_estimate
+            )
+            concat_residuals = bounds_from_simulations(
+                concat_residuals, alpha, forecaster.point_estimate
             )
 
         return ForecastContainer(
@@ -117,7 +146,8 @@ class Bootstrapper:
                 period=param_types["period"],
                 cohort=param_types["cohort"]
             ),
-            attrs={"alpha": self.alpha}
+            in_sample_residuals_=concat_residuals,
+            attrs={"alpha": alpha}
         )
 
     def _assert_simulations_present(self, forecaster: Forecaster):

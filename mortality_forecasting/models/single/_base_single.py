@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Self, Literal
+from typing import Self
+
+import xarray as xr
 
 from mortality_forecasting.core._base_model import Model
 from mortality_forecasting.data_processing._dataset import MortalityDataset
@@ -45,13 +47,17 @@ class SinglePopulationModel(Model, ABC):
             forecaster: Forecaster | DualForecaster,
             steps: int,
             alpha: float = 0.05,
-            bootstrap: bool = False
+            bootstrapper: Bootstrapper | None = None
         ) -> ForecastContainer:
         self._check_if_fitted()
 
-        if bootstrap is True:
-            bootstrapper = Bootstrapper(alpha=alpha)
-            return bootstrapper.run(model=self, forecaster=forecaster, steps=steps)
+        if isinstance(bootstrapper, Bootstrapper):
+            return bootstrapper.run(
+                model=self, 
+                forecaster=forecaster, 
+                steps=steps,
+                alpha=alpha
+            )
 
         if isinstance(forecaster, Forecaster):
             forecaster.fit(self.parameters_.period)
@@ -121,3 +127,13 @@ class SinglePopulationModel(Model, ABC):
                         f"Year interval mismatch between grid " \
                         f"'{reference_grid}' and grid '{grid}'."
                     )
+
+    @property
+    @abstractmethod
+    def deviance_residuals(self) -> xr.DataArray:
+        pass
+
+    @property
+    @abstractmethod
+    def pearson_residuals(self) -> xr.DataArray:
+        pass

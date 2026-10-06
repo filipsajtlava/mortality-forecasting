@@ -17,7 +17,7 @@ class EvaluatorPlotter(Plotter):
     def __init__(self, evaluator: ForecastEvaluator) -> None:
         self.evaluator = evaluator
 
-    def plot_errors_by_age(
+    def plot_mase_by_age(
             self,
             training_data: xr.DataArray,
             ax: Axes | None = None,
@@ -86,6 +86,103 @@ class EvaluatorPlotter(Plotter):
         ax.legend()
         return ax
 
+    def plot_bootstrap_residual_scatter(
+            self,
+            mortality_rates: xr.DataArray,
+            ax: Axes | None = None,
+            ax_settings: dict[str, Any] = {},
+            scatter_settings: dict[str, Any] = {}
+        ) -> Axes:
+        ax = self._validate_and_normalize_axs(axes_user_input=ax)
+        self._validate_settings_length(
+            1, ax_settings, scatter_settings
+        )
+
+        residuals = self.evaluator.forecast_container.in_sample_residuals_
+        if residuals is None:
+            raise ValueError("Please provide a forecast container with bootstrap residuals")
+        residuals_y = residuals.sel({config.BOUND_DIM: "point"})
+        ln_mortalities_x = np.log(mortality_rates)
+
+        scatter_defaults = {}
+        ax.scatter(
+            ln_mortalities_x.values.ravel(), 
+            residuals_y.values.ravel(),
+            **(scatter_defaults | scatter_settings)
+        )
+
+        ax_defaults = {
+            "xlabel": "$\\ln(m_{x,t})$",
+            "ylabel": f"Values of residuals"
+        }
+        ax.set(**(ax_defaults | ax_settings))
+        return ax        
+
+    def plot_bootstrap_residual_heatmap(
+            self,
+            base_model_residuals: xr.DataArray,
+            ax: Axes | None = None,
+            ax_settings: dict[str, Any] = {},
+            colorbar_label_settings: dict[str, Any] = {},
+            contour_settings: dict[str, Any] = {}
+        ) -> Axes:
+        ax = self._validate_and_normalize_axs(axes_user_input=ax)
+        self._validate_settings_length(
+            1, ax_settings, colorbar_label_settings
+        )
+
+        res_base = base_model_residuals
+        res_bounds = self.evaluator.forecast_container.in_sample_residuals_
+        if res_bounds is None:
+            raise ValueError("Please provide a forecast container with bootstrap residuals")
+
+        diff_from_median = (res_base - res_bounds.sel(Bound="point")).values
+        years = res_base.coords[config.YEAR_DIM].values
+        ages = res_base.coords[config.AGE_DIM].values
+        max_val = np.nanmax(np.abs(diff_from_median))
+
+        mesh = ax.pcolormesh(
+            years, 
+            ages, 
+            diff_from_median, 
+            cmap="magma",
+            vmin=-max_val,
+            vmax=max_val,
+            rasterized=True
+        )
+
+        cbar = ax.figure.colorbar(mesh)
+        colorbar_label_defaults = {
+            "rotation": 270,
+            "labelpad": 15,
+            "label": "Deviation magnitude from bootstrap median"
+        }
+        cbar.set_label(**(colorbar_label_defaults | colorbar_label_settings))
+
+        upper_viol = (res_base > res_bounds.sel(Bound="upper")).values
+        lower_viol = (res_base < res_bounds.sel(Bound="lower")).values
+        violations = upper_viol | lower_viol
+
+        contour_defaults = {
+            "colors": "black",
+            "linewidths": 1,
+            "linestyles": "-"
+        }
+        ax.contour(
+            years, 
+            ages, 
+            violations, 
+            levels=[0.5], 
+            **(contour_settings | contour_defaults)
+        )
+
+        ax_defaults = {
+            "xlabel": f"{config.YEAR_DIM}",
+            "ylabel": f"{config.AGE_DIM}"
+        }
+        ax.set(**(ax_defaults | ax_settings))
+        return ax     
+
     def plot_forecasts(
             self,
             selected_ages: list[int],
@@ -111,6 +208,7 @@ class EvaluatorPlotter(Plotter):
             "color": "black",
             "linewidth": 2
         }
+
         ax.axvline(x=split_year, **(vline_defaults | vline_settings))
         # for the plot lines to intersect correctly, we have to extend the 
         # actual data, to contain the last year of the train set as well
@@ -119,7 +217,10 @@ class EvaluatorPlotter(Plotter):
             dim=config.YEAR_DIM
         )
         forecast_back_extended = xr.concat(
-            [training_data.isel({config.YEAR_DIM: -1}), self.evaluator.forecast],
+            [
+                training_data.isel({config.YEAR_DIM: -1}), 
+                self.evaluator.forecast_container.mortality_rates_
+            ],
             dim=config.YEAR_DIM
         )
 
