@@ -4,7 +4,6 @@ from typing import Literal, TYPE_CHECKING
 import xarray as xr
 
 from mortality_forecasting.core._base_forecaster import Forecaster
-from mortality_forecasting.data_processing._dataset import MortalityDataset
 from mortality_forecasting import config
 from mortality_forecasting.core._commons import (
     bounds_from_simulations, 

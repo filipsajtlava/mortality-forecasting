@@ -94,7 +94,7 @@ class DataFetcherHMD:
     
         failed_downloads = []
         successfully_loaded = {}
-        for key, file in config.FILE_SELECTION_COUNTRY_DATA.items():
+        for metric, file in config.FILE_SELECTION_COUNTRY_DATA.items():
             path_to_file = country_data_path / file
             
             if not path_to_file.exists() or \
@@ -108,11 +108,11 @@ class DataFetcherHMD:
                     if path_to_file.exists():
                         error_msg = f"WARNING: refresh failed for {file}, defaulting to cache." 
                         print(error_msg)
-                        successfully_loaded[key] = path_to_file
+                        successfully_loaded[metric] = path_to_file
                 else:
-                    successfully_loaded[key] = path_to_file
+                    successfully_loaded[metric] = path_to_file
             else:
-                successfully_loaded[key] = path_to_file
+                successfully_loaded[metric] = path_to_file
         if not any(country_data_path.iterdir()):
             country_data_path.rmdir()
 

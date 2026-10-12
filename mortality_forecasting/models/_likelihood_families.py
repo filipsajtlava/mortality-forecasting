@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import xarray as xr
+from scipy.special import gammaln, digamma, polygamma
 
 from mortality_forecasting import config
 
@@ -44,7 +45,7 @@ class LikelihoodFamily(ABC):
         pass
 
     @abstractmethod
-    def dispersion_initialization(self, **kwargs) -> float | None:
+    def dispersion_initialization(self, **kwargs) -> xr.DataArray | None:
         pass
 
     @abstractmethod
@@ -53,7 +54,7 @@ class LikelihoodFamily(ABC):
             D: xr.DataArray,
             D_pred: xr.DataArray,
             **kwargs
-        ) -> float | None:
+        ) -> xr.DataArray | None:
         pass
 
     @abstractmethod
@@ -74,9 +75,9 @@ class Poisson(LikelihoodFamily):
             D_pred: xr.DataArray,
             **kwargs
         ) -> float:
-        return float((
+        return (
             D * np.log(D_pred / E) - D_pred
-        ).sum())
+        ).sum(dim=[config.AGE_DIM, config.YEAR_DIM])
 
     def get_variance(self, D_pred: xr.DataArray, **kwargs) -> xr.DataArray:
         return D_pred
@@ -99,8 +100,16 @@ class Poisson(LikelihoodFamily):
         ) -> tuple[float, float]:
         return 1.0, 1.0
 
-    def dispersion_initialization(self, **kwargs) -> None:
-        return None
+    def dispersion_initialization(
+            self, 
+            bound_dims: dict[str, np.ndarray], 
+            **kwargs
+        ) -> xr.DataArray:
+        shape = tuple(len(value) for value in bound_dims.values())
+        return xr.DataArray(
+            np.full(shape, None),
+            coords=bound_dims
+        )
 
     def update_dispersion(
             self,
@@ -129,23 +138,21 @@ class NegativeBinomial(LikelihoodFamily):
             D: xr.DataArray,
             E: xr.DataArray,
             D_pred: xr.DataArray,
-            lambda_dispersion: float,
+            lambda_dispersion: xr.DataArray,
             **kwargs
-        ) -> float:
-        D_max = D.max()
-        death_lookup_array = np.insert(
-            np.cumsum(np.log(lambda_dispersion + np.arange(0, D_max))), 0, 0
-        )
-        return float((
-            death_lookup_array[D.astype(int)] - (D + lambda_dispersion) * 
+        ) -> xr.DataArray:
+        # this represents the \sum_{i=1}^{D_{x,t}} \ln(\lambda + D_{x,t} - i)
+        log_gamma_term = gammaln(D + lambda_dispersion) - gammaln(lambda_dispersion)
+        return (
+            log_gamma_term - (D + lambda_dispersion) * 
             np.log(1 + D_pred / lambda_dispersion) +
             D * np.log(D_pred / lambda_dispersion)
-        ).sum())
+        ).sum(dim=[config.AGE_DIM, config.YEAR_DIM])
 
     def get_variance(
             self, 
             D_pred: xr.DataArray, 
-            lambda_dispersion: float,
+            lambda_dispersion: xr.DataArray,
             **kwargs
         ) -> xr.DataArray:
         return D_pred + (D_pred ** 2) / lambda_dispersion
@@ -154,7 +161,7 @@ class NegativeBinomial(LikelihoodFamily):
             self,
             D: xr.DataArray, 
             D_pred: xr.DataArray,
-            lambda_dispersion: float,
+            lambda_dispersion: xr.DataArray,
             **kwargs
         ) -> xr.DataArray:
         log_term = xr.where(D == 0, 0.0, D * np.log(D / D_pred))
@@ -170,7 +177,7 @@ class NegativeBinomial(LikelihoodFamily):
             self,
             D: xr.DataArray, 
             D_pred: xr.DataArray,
-            lambda_dispersion: float,
+            lambda_dispersion: xr.DataArray,
             **kwargs
         ) -> tuple[xr.DataArray, xr.DataArray]:
         num_factor = (lambda_dispersion + D) / (lambda_dispersion + D_pred)
@@ -180,42 +187,54 @@ class NegativeBinomial(LikelihoodFamily):
         )
         return num_factor, denom_factor
 
-    def dispersion_initialization(self, init: float | None = None, **kwargs) -> float:
-        return init if init else config.LAMBDA_INITIALIZATION
+    def dispersion_initialization(
+            self, 
+            bound_dims: dict[str, np.ndarray],
+            init: xr.DataArray | None, 
+            **kwargs
+        ) -> xr.DataArray:
+        if isinstance(init, xr.DataArray):
+            return init
+        else:
+            shape = tuple(len(value) for value in bound_dims.values())
+            return xr.DataArray(
+                np.full(shape, config.LAMBDA_INITIALIZATION),
+                coords=bound_dims
+            )
 
     def update_dispersion(
             self,
             D: xr.DataArray,
             D_pred: xr.DataArray,
-            lambda_dispersion: float,
+            lambda_dispersion: xr.DataArray,
             **kwargs
-        ) -> float:
-        max_death = D.max()
-        D_sum_numerator = np.insert(
-            np.cumsum(1 / (lambda_dispersion + np.arange(0, max_death))), 0, 0
+        ) -> xr.DataArray:
+        lambda_broadcasted = lambda_dispersion.broadcast_like(D)
+        num_gamma = digamma(D + lambda_broadcasted) - digamma(lambda_broadcasted)
+        denom_gamma = polygamma(1, lambda_broadcasted) - polygamma(1, D + lambda_broadcasted)
+
+        D_sum_numerator = (
+            num_gamma
+            + np.log(lambda_broadcasted / (lambda_broadcasted + D_pred))
+            + (D_pred - D) / (D_pred + lambda_broadcasted)
+        ).sum(dim=[config.AGE_DIM, config.YEAR_DIM])
+        D_sum_denominator = (
+            denom_gamma
+            - 1 / lambda_broadcasted
+            + (2 * D_pred + lambda_broadcasted - D)
+            / (lambda_broadcasted + D_pred) ** 2
+        ).sum(dim=[config.AGE_DIM, config.YEAR_DIM])
+
+        lambda_dispersion_new = lambda_dispersion + (
+            D_sum_numerator / D_sum_denominator
         )
-        D_sum_denominator = np.insert(
-            np.cumsum(1 / (lambda_dispersion + np.arange(0, max_death)) ** 2), 0, 0
-        )
-        lambda_dispersion_new = float(
-            lambda_dispersion + (
-                D_sum_numerator[D.astype(int)] + 
-                np.log(lambda_dispersion / (lambda_dispersion + D_pred)) + 
-                (D_pred - D) / (D_pred + lambda_dispersion)
-            ).sum() / (
-                D_sum_denominator[D.astype(int)] - 
-                1 / lambda_dispersion +
-                (2 * D_pred + lambda_dispersion - D) / (lambda_dispersion + D_pred) ** 2 
-            ).sum()
-        )
-        lambda_dispersion_new = max(lambda_dispersion_new, 1e-2)
-        return lambda_dispersion_new
+        return lambda_dispersion_new.clip(min=1e-2)
 
     def sample_from_distribution(
             self, 
             D_pred: xr.DataArray,
             seed: np.random.Generator,
-            lambda_dispersion: float,
+            lambda_dispersion: xr.DataArray,
             **kwargs
         ) -> xr.DataArray:
         return xr.apply_ufunc(

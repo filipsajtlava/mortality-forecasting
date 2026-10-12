@@ -19,10 +19,10 @@ def assert_glm(target: object) -> None:
         )
 
 def validate_value_column(value_column: str) -> None:
-    if value_column not in config.VALUE_COLUMNS:
+    if value_column not in config.SEX:
         raise ValueError(
             f"The selected value column '{value_column}' is unavailable, " \
-            f"try one of the following: {config.VALUE_COLUMNS}"
+            f"try one of the following: {config.SEX}"
         )
 
 def bounds_from_simulations(
@@ -97,13 +97,12 @@ class ParameterContainer:
         except KeyError:
             return default
 
-    # TODO: rename this..
-    def _indexed_items(self) -> Iterator[tuple[str, xr.DataArray]]:
+    def _non_scalars(self) -> Iterator[tuple[str, xr.DataArray]]:
         """Gives only parameters that are not singular scalars"""
         for ds in self._datasets:
             for name in ds:
                 da = ds[name]
-                if da.ndim > 0:
+                if da.ndim > 0 and (config.YEAR_DIM in da.dims or config.AGE_DIM in da.dims):
                     yield name, da
 
     @property
