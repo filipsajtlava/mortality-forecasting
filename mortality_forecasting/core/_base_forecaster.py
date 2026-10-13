@@ -11,12 +11,14 @@ class Forecaster(ABC):
             seed: int | np.random.Generator | None = None,
             simulations: int | None = None,
             return_simulations: bool = False,
-            point_estimate: Literal["mean", "median"] = "median"
+            point_estimate: Literal["mean", "median"] = "median",
+            overlap: bool = False
         ) -> None:
         self.seed = self._normalize_seed(seed)
         self.simulations = simulations
         self.return_simulations = return_simulations
-        self.point_estimate =point_estimate
+        self.point_estimate = point_estimate
+        self.overlap = overlap
 
     def _normalize_seed(self, seed: int | np.random.Generator | None) -> np.random.Generator:
         """Normalizes the entered seed into a single np.random.Generator instance

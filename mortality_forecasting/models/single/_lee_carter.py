@@ -263,7 +263,7 @@ class LeeCarterModel(SinglePopulationModel):
             forecasted_values.static.ax + 
             forecasted_values.static.bx * forecasted_values.period.kt
         )
-        return np.exp(log_M_predictions)
+        return np.exp(log_M_predictions).transpose(*config.DIM_ORDERING, missing_dims="ignore")
 
     # TODO: if other models will use the lee-miller correction, this should be moved into the parent class 
     def _set_jumpoff_anchor(self, rate: xr.DataArray | None) -> Self:

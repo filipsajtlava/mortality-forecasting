@@ -45,7 +45,7 @@ def bounds_from_simulations(
     bounds_da = (
         xr.concat([lower_da, point_da, upper_da], dim=config.BOUND_DIM)
         .assign_coords({config.BOUND_DIM: ["lower", "point", "upper"]})
-        .transpose(config.AGE_DIM, config.YEAR_DIM, config.BOUND_DIM, ..., missing_dims="ignore")
+        .transpose(*config.DIM_ORDERING, missing_dims="ignore")
     )
     return bounds_da
 
@@ -107,7 +107,7 @@ class ParameterContainer:
 
     @property
     def data(self) -> xr.Dataset:
-        return xr.merge(self._datasets)
+        return xr.merge(self._datasets).transpose(*config.DIM_ORDERING, missing_dims="ignore")
                 
 @dataclass
 class ForecastContainer:
