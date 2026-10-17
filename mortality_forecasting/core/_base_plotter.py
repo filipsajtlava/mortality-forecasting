@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from abc import ABC
-from typing import Any
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -63,17 +63,21 @@ class Plotter(ABC):
             ax: Axes,
             ax_settings: dict[str, Any],
             colorbar_settings: dict[str, Any],
-            imshow_settings: dict[str, Any]
+            imshow_settings: dict[str, Any],
+            dimensions: Literal["age-year", "year-age"] = "age-year"
         ) -> Axes:
-        x_axis_ages = rates.coords[config.AGE_DIM].values
-        y_axis_years = rates.coords[config.YEAR_DIM].values
-
         imshow_defaults = {"origin": "lower", "cmap": "magma"}
+        if dimensions == "age-year":
+            x_axis = rates.coords[config.AGE_DIM].values
+            y_axis = rates.coords[config.YEAR_DIM].values
+        else:
+            x_axis = rates.coords[config.YEAR_DIM].values
+            y_axis = rates.coords[config.AGE_DIM].values
         ax.imshow(
-            rates.T,
+            rates,
             extent=[
-                x_axis_ages.min(), x_axis_ages.max(), 
-                y_axis_years.min(), y_axis_years.max()
+                x_axis.min(), x_axis.max(), 
+                y_axis.min(), y_axis.max()
             ], 
             **(imshow_defaults | imshow_settings)
         )

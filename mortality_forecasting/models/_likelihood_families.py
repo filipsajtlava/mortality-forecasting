@@ -129,7 +129,7 @@ class Poisson(LikelihoodFamily):
             seed.poisson,
             D_pred,
             keep_attrs=True
-        )
+        ).transpose(*config.DIM_ORDERING, missing_dims="ignore")
 
 
 class NegativeBinomial(LikelihoodFamily):
@@ -242,4 +242,4 @@ class NegativeBinomial(LikelihoodFamily):
             lambda_dispersion,
             lambda_dispersion / (lambda_dispersion + D_pred),
             keep_attrs=True,
-        )
+        ).transpose(*config.DIM_ORDERING, missing_dims="ignore")

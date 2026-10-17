@@ -53,58 +53,78 @@ class MortalityDataset:
     @classmethod
     def load_from_files(
             cls,
-            input_dict: dict[str, str | Path | pd.DataFrame | xr.DataArray],
-            country_code: str = "CUSTOM",
+            input_dict: (
+                dict[str, str | Path | xr.DataArray]
+                | dict[str, dict[str, str | Path | xr.DataArray]]
+            ),
             preprocessing: bool = True,
         ) -> xr.Dataset:
-        metric_arrays = {}
+        countries = ["CUSTOM"]
+        country_datasets = []
 
-        for metric, raw_input in input_dict.items():
-            if isinstance(raw_input, (str, Path)):
-                df = pd.read_csv(raw_input, index_col=0)
-            elif isinstance(raw_input, pd.DataFrame):
-                df = raw_input
-            elif isinstance(raw_input, xr.DataArray):
-                metric_arrays[metric] = raw_input
-                continue
-            else:
-                raise TypeError(f"Invalid input type for metric '{metric}': {type(raw_input)}")
+        first_val = list(input_dict.values())[0]
+        if isinstance(first_val, dict):
+            countries = list(input_dict.keys())
+        else:
+            input_dict = {countries[0]: input_dict}
 
-            df.index = df.index.astype(int)
-            df.columns = df.columns.astype(int)
-            da = df.stack(future_stack=True).rename_axis([config.AGE_DIM, config.YEAR_DIM]).to_xarray()
+        for country in countries:
+            metric_arrays = {}
+            for metric, raw_input in input_dict[country].items():
+                da = cls._parse_custom_input(
+                    raw_input=raw_input,
+                    metric=metric,
+                    country_code=country,
+                    preprocessing=preprocessing,
+                )
+                metric_arrays[metric] = da
 
-            if config.COUNTRY_DIM not in da.dims:
-                da = da.expand_dims({config.COUNTRY_DIM: [country_code]})
-            if config.SEX_DIM not in da.dims:
-                da = da.expand_dims({config.SEX_DIM: [config.SEX[2]]})
+            if metric_arrays:
+                country_datasets.append(xr.Dataset(metric_arrays))
 
-            if preprocessing:
-                da = cls._preprocess_array(da)
+        if not country_datasets:
+            raise ValueError("No data loaded from the provided inputs.")
 
-            metric_arrays[metric] = da
-
-        return xr.Dataset(metric_arrays)
+        if len(country_datasets) == 1:
+            return country_datasets[0]
+        else:
+            return xr.concat(
+                country_datasets, 
+                dim=config.COUNTRY_DIM, 
+                join="outer"
+            )
 
     @classmethod
-    def train_test_split(
+    def _parse_custom_input(
             cls,
-            ds: xr.Dataset,
-            split_year: int,
-            overlap: bool = False
-        ) -> tuple[xr.Dataset, xr.Dataset]:
-        min_year = int(ds.coords[config.YEAR_DIM].min())
-        max_year = int(ds.coords[config.YEAR_DIM].max())
+            raw_input: str | Path | pd.DataFrame | xr.DataArray,
+            metric: str,
+            country_code: str,
+            preprocessing: bool = True,
+        ) -> xr.DataArray:
+        if isinstance(raw_input, (str, Path)):
+            df = pd.read_csv(raw_input, index_col=0)
+            df.index = df.index.astype(int)
+            df.columns = df.columns.astype(int)
+            da = (
+                df
+                .stack(future_stack=True)
+                .rename_axis([config.AGE_DIM, config.YEAR_DIM])
+                .to_xarray()
+            )
+        elif isinstance(raw_input, xr.DataArray):
+            da = raw_input.copy()
+        else:
+            raise TypeError(f"Invalid input type for metric '{metric}': {type(raw_input)}")
 
-        if not (min_year <= split_year <= max_year):
-            raise ValueError(f"Split year {split_year} out of bounds ({min_year}-{max_year}).")
+        if config.COUNTRY_DIM not in da.dims and country_code != "CUSTOM":
+            da = da.expand_dims({config.COUNTRY_DIM: [country_code]})
+        if config.SEX_DIM not in da.dims:
+            da = da.expand_dims({config.SEX_DIM: [config.SEX[2]]})
 
-        test_start = split_year if overlap else split_year + 1
-
-        train = ds.sel({config.YEAR_DIM: slice(min_year, split_year)})
-        test = ds.sel({config.YEAR_DIM: slice(test_start, max_year)})
-
-        return train, test
+        if preprocessing:
+            da = cls._preprocess_array(da)
+        return da
 
     @classmethod
     def _parse_hmd_file(

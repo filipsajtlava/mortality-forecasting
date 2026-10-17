@@ -34,11 +34,15 @@ class RandomWalkWithDrift(Forecaster):
         self.parameters_for_forecasting_ = {}
 
         for parameter_name, parameter_da in self.parameter_dataset.items():
-            param_main_dim = parameter_da.dims[0]
-            drift_ = parameter_da[-1] - parameter_da[0] / (len(parameter_da) - 1)
-            std_of_errors_ = ((
-                parameter_da - drift_
-            ).diff(dim=param_main_dim)).std(dim=param_main_dim, ddof=1)   
+            parameter_da = parameter_da.sortby(config.YEAR_DIM)
+            n_years = parameter_da.sizes[config.YEAR_DIM]
+
+            first = parameter_da.isel({config.YEAR_DIM: 0}, drop=True)
+            last = parameter_da.isel({config.YEAR_DIM: -1}, drop=True)
+            drift_ = (last - first) / (n_years - 1)
+
+            diffs = parameter_da.diff(dim=config.YEAR_DIM)
+            std_of_errors_ = (diffs - drift_).std(dim=config.YEAR_DIM, ddof=1)
             self.parameters_for_forecasting_[parameter_name] = {
                 "drift_": drift_,
                 "std_of_errors_": std_of_errors_

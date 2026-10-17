@@ -11,9 +11,9 @@ from mortality_forecasting.core._commons import (
     ParameterContainer,
     assert_glm
 )
+from mortality_forecasting.data_processing import MortalityDataset
 if TYPE_CHECKING:
     from mortality_forecasting.core._base_model import Model
-
 
 
 class Bootstrapper:
@@ -35,7 +35,6 @@ class Bootstrapper:
         ) -> ForecastContainer:
         assert_glm(model)
         self._assert_simulations_present(forecaster)
-        value_column = model.value_column
         param_forecasts = []
         mortality_forecasts = []
 
@@ -43,7 +42,6 @@ class Bootstrapper:
         residual_method = f"{self.return_residuals}_residuals"
 
         parameters = model.parameters_
-        overlap=parameters.period.attrs["overlap"]
         D_pred = model.predict_in_sample() * model.E
         jump_off_anchor = model.M if self.bootstrap_anchor == "full" else None
 
@@ -54,10 +52,12 @@ class Bootstrapper:
                 seed=rng_sample,
                 lambda_dispersion=parameters.get("lambda_dispersion", None)
             )
+            mortality_forecasts
             data = MortalityDataset.load_from_files(
-                E = {value_column: model.E},
-                D = {value_column: samples},
-                overlap=overlap
+                input_dict={
+                    "E": model.E,
+                    "D": samples
+                }
             )
             new_model = type(model)(
                 method=model.method, 
@@ -65,7 +65,7 @@ class Bootstrapper:
                 num_initialization=parameters,
                 ftol=model.ftol,
                 verbose=model.verbose
-            )._set_jumpoff_anchor(jump_off_anchor).fit(data, model.value_column)
+            )._set_jumpoff_anchor(jump_off_anchor).fit(data)
 
             if self.return_residuals is not None:
                 residuals = getattr(new_model, residual_method)
@@ -74,7 +74,8 @@ class Bootstrapper:
             forecaster_single = type(forecaster)(
                 seed=rng_forecast,
                 simulations=1,
-                return_simulations=True
+                return_simulations=True,
+                overlap=forecaster.overlap
             )
             forecast = new_model.forecast(forecaster_single, steps)
             param_forecasts.append(
@@ -115,7 +116,7 @@ class Bootstrapper:
                         concat_params, alpha, forecaster.point_estimate
                     )
                 param_types[param_type] = concat_params
-        
+       
         concat_mortalities = xr.concat(
             forecasted_mortalities,
             dim=config.SIMULATION_DIM,
@@ -134,9 +135,10 @@ class Bootstrapper:
             concat_mortalities = bounds_from_simulations(
                 concat_mortalities, alpha, forecaster.point_estimate
             )
-            concat_residuals = bounds_from_simulations(
-                concat_residuals, alpha, forecaster.point_estimate
-            )
+            if residuals is not None:
+                concat_residuals = bounds_from_simulations(
+                    concat_residuals, alpha, forecaster.point_estimate
+                )
 
         return ForecastContainer(
             mortality_rates_=concat_mortalities,

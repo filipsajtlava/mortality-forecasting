@@ -119,3 +119,16 @@ class ForecastContainer:
     parameters_: ParameterContainer
     in_sample_residuals_: xr.DataArray | None = None
     attrs: dict | None = None
+
+    def __post_init__(self):
+        bound_dims = {
+            dim: self.mortality_rates_.coords[dim].values
+            for dim in self.mortality_rates_.dims
+            if dim not in (config.AGE_DIM, config.YEAR_DIM)
+        }
+
+        if isinstance(self.attrs, dict):
+            self.attrs["bound_dims"] = bound_dims
+        else:
+            self.attrs = {"bound_dims": bound_dims}
+        

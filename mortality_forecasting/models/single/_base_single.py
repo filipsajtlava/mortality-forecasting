@@ -26,7 +26,6 @@ class SinglePopulationModel(Model, ABC):
             for dim in self.mortality_data.dims
             if dim not in (config.AGE_DIM, config.YEAR_DIM)
         }
-        self._bound_dims
         self.D = self.mortality_data.D
         self.E = self.mortality_data.E
         self.M = self.D / self.E
@@ -73,7 +72,7 @@ class SinglePopulationModel(Model, ABC):
         return ForecastContainer(
             mortality_rates_=predicted_mortalities,
             parameters_=parameters, 
-            attrs={"alpha": alpha}
+            attrs={"alpha": alpha, "bound_dims": self._bound_dims}
         )
 
     def _validate_dataset(
