@@ -102,7 +102,11 @@ class ParameterContainer:
         for ds in self._datasets:
             for name in ds:
                 da = ds[name]
-                if da.ndim > 0 and (config.YEAR_DIM in da.dims or config.AGE_DIM in da.dims):
+                if da.ndim > 0 and (
+                    config.YEAR_DIM in da.dims or 
+                    config.AGE_DIM in da.dims or 
+                    config.COHORT_DIM in da.dims
+                ):
                     yield name, da
 
     @property

@@ -20,13 +20,15 @@ COUNTRY_DIM = "Country"
 SEX_DIM = "Sex"
 SIMULATION_DIM = "Simulation"
 BOUND_DIM = "Bound"
+COHORT_DIM = "Cohort"
 DIM_ORDERING = [
     AGE_DIM,
     YEAR_DIM,
     COUNTRY_DIM,
     SEX_DIM,
     SIMULATION_DIM,
-    BOUND_DIM
+    BOUND_DIM,
+    COHORT_DIM
 ]
 
 SEX = ["Female", "Male", "Total"]

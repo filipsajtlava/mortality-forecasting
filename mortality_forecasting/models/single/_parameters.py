@@ -10,7 +10,6 @@ from mortality_forecasting import config
 @dataclass(frozen=True)
 class ParamSpecification:
     name: str
-    estimated_name: str
     latex: str
     category: Literal["static", "period", "cohort"]
     naive_value: float
@@ -25,13 +24,13 @@ class ModelParams:
 
     def _build_container(
             self,
-            mapping: dict[ParamSpecification, xr.DataArray]
+            estimated_parameters: dict[ParamSpecification, xr.DataArray]
         ) -> ParameterContainer:
         def get_vars(category: str) -> dict[str, xr.DataArray]:
             return {
                 spec.name: param_data.transpose(*config.DIM_ORDERING, missing_dims="ignore")
-                for spec, param_data in mapping.items()
-                if spec.category == category
+                for spec, param_data in estimated_parameters.items()
+                if isinstance(spec, ParamSpecification) and spec.category == category
             }
 
         cohort_params = get_vars("cohort")            
@@ -43,11 +42,13 @@ class ModelParams:
         
 
 class LeeCarterParams(ModelParams):
-    AX = ParamSpecification("ax", "ax_", "$\\alpha_x$", "static", 0.0, config.AGE_DIM)
-    BX = ParamSpecification("bx", "bx_", "$\\beta_x$", "static", 0.0, config.AGE_DIM)
-    KT = ParamSpecification("kt", "kt_", "$\\kappa_t$", "period", 1.0, config.YEAR_DIM)
+    AX = ParamSpecification("ax", "$\\alpha_x$", "static", 0.0, config.AGE_DIM)
+    BX = ParamSpecification("bx", "$\\beta_x$", "static", 0.0, config.AGE_DIM)
+    KT = ParamSpecification("kt", "$\\kappa_t$", "period", 1.0, config.YEAR_DIM)
 
-class RenshawHabermanParams(LeeCarterParams):
-    BX1 = ParamSpecification("bx1", "bx1_", "$\\beta_x^{(1)}$", "static", 0.0, config.AGE_DIM)
-    BX2 = ParamSpecification("bx2", "bx2_", "$\\beta_x^{(2)}$", "static", 0.0, config.AGE_DIM)
-    GC = ParamSpecification("gc", "gc_", "$\\gamma_{t-x}$", "cohort", 0.0, config.YEAR_DIM) # IDK??
+class RenshawHabermanParams(ModelParams):
+    AX = ParamSpecification("ax", "$\\alpha_x$", "static", 0.0, config.AGE_DIM)
+    BX1 = ParamSpecification("bx1", "$\\beta_x^{(1)}$", "static", 0.0, config.AGE_DIM)
+    BX2 = ParamSpecification("bx2", "$\\beta_x^{(2)}$", "static", 0.0, config.AGE_DIM)
+    KT = ParamSpecification("kt", "$\\kappa_t$", "period", 1.0, config.YEAR_DIM)
+    GC = ParamSpecification("gc", "$\\gamma_{t-x}$", "cohort", 1.0, config.COHORT_DIM)

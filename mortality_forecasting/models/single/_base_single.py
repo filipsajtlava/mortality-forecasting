@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Self, ClassVar
 
 import xarray as xr
+import numpy as np
 
 from mortality_forecasting.core._base_model import Model
 from mortality_forecasting import config
@@ -13,11 +14,15 @@ from mortality_forecasting.models.single._parameters import ModelParams
 
 
 class SinglePopulationModel(Model, ABC):
-    _MODEL_PARAMS: ClassVar[ModelParams]
+    _PARAMS: ClassVar[ModelParams]
 
     @abstractmethod
     def _fit(self):
         pass
+
+    @property
+    def parameters_(self):
+        return self._parameters
 
     def fit(self, mortality_data: xr.Dataset) -> Self:
         self.mortality_data = self._validate_dataset(mortality_data)
@@ -29,9 +34,54 @@ class SinglePopulationModel(Model, ABC):
         self.D = self.mortality_data.D
         self.E = self.mortality_data.E
         self.M = self.D / self.E
+        self._year_coords = self.D.coords[config.YEAR_DIM]
+        self._age_coords = self.D.coords[config.AGE_DIM]
 
-        self._fit()
+        estimated_params = self._fit()
+        self._parameters = self._PARAMS._build_container(estimated_params)
+        if not (estimated_params.get("lambda_dispersion", xr.DataArray([None])) == None).any():
+            self._parameters.static["lambda_dispersion"] = estimated_params["lambda_dispersion"]
         return self
+
+    def _initialize_parameters(self) -> dict[str, xr.DataArray | None]:
+        initialized_params = {}
+        lambda_init = None
+
+        if self.num_initialization == "SVD":
+            from ._lee_carter import LeeCarterModel  
+            lc_model = LeeCarterModel(method=self.num_initialization).fit(self.mortality_data)
+            for param_spec in self._PARAMS:
+                if lc_model.parameters_.get(param_spec.name, None) is not None:
+                    initialized_params[param_spec.name] = lc_model.parameters_[param_spec.name]
+                
+        elif isinstance(self.num_initialization, ParameterContainer):
+            for param_spec in self._PARAMS:
+                initialized_params[param_spec.name] = self.num_initialization.get(
+                    param_spec.name, None
+                )
+            lambda_init = self.num_initialization.get("lambda_dispersion", None)
+
+        for param_spec in self._PARAMS:
+            if param_spec.name not in initialized_params.keys():
+                dims = [param_spec.dimension] + list(self._bound_dims.keys())
+                initialized_params[param_spec.name] = xr.DataArray(
+                    param_spec.naive_value, 
+                    dims=dims,
+                    coords={
+                        **self._bound_dims,
+                        param_spec.dimension: (
+                            np.unique(self._year_coords - self._age_coords)
+                            if param_spec.dimension == config.COHORT_DIM 
+                            else self.D.coords[param_spec.dimension].values
+                        )
+                    }
+                )
+        
+        initialized_params["lambda_dispersion"] = self.family.dispersion_initialization(
+            bound_dims=self._bound_dims,
+            init=lambda_init
+        )
+        return initialized_params
 
     def forecast(
             self, 

@@ -226,7 +226,12 @@ class NegativeBinomial(LikelihoodFamily):
         ).sum(dim=[config.AGE_DIM, config.YEAR_DIM])
 
         lambda_dispersion_new = lambda_dispersion + (
-            D_sum_numerator / D_sum_denominator
+            (
+                D_sum_numerator 
+                / 
+                D_sum_denominator
+            )
+            .clip(min=-10, max=10)
         )
         return lambda_dispersion_new.clip(min=1e-2)
 
