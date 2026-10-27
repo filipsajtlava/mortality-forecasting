@@ -3,13 +3,13 @@ from typing import Literal, Self
 import numpy as np
 import xarray as xr
 
-from mortality_forecasting.models.single._base_single import SinglePopulationModel
+from mortality_forecasting.core._base_model import Model
 from mortality_forecasting.core._commons import ParameterContainer, assert_glm
 from mortality_forecasting import config
 from mortality_forecasting.models.single._parameters import LeeCarterParams, ParamSpecification
 
 
-class LeeCarterModel(SinglePopulationModel):
+class LeeCarterModel(Model):
     _PARAMS = LeeCarterParams()
 
     def __init__(
@@ -20,10 +20,13 @@ class LeeCarterModel(SinglePopulationModel):
             ftol: float = 1e-7,
             verbose: bool = False
         ) -> None:
-        super().__init__(method=method, lee_miller_fix=lee_miller_fix)
-        self.num_initialization = num_initialization
-        self.ftol = ftol
-        self.verbose = verbose
+        super().__init__(
+            method=method, 
+            num_initialization=num_initialization,
+            lee_miller_fix=lee_miller_fix,
+            ftol=ftol,
+            verbose=verbose
+        )
 
     def _fit(self) -> None:
         method_map = {
@@ -191,7 +194,8 @@ class LeeCarterModel(SinglePopulationModel):
             slots_active_mask = likelihood_change > self.ftol
 
             if self.verbose:
-                print(f"iteration {iteration}: log-change: {likelihood_change}")
+                print("------------")
+                print(f"iteration {iteration}: log-change: \n {likelihood_change}")
 
         if iteration > config.MAXIMUM_LC_ITERATIONS:
             print(

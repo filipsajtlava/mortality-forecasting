@@ -3,13 +3,13 @@ from typing import Literal, Self
 import numpy as np
 import xarray as xr
 
-from mortality_forecasting.models.single._base_single import SinglePopulationModel
+from mortality_forecasting.core._base_model import Model
 from mortality_forecasting.core._commons import ParameterContainer, assert_glm
 from mortality_forecasting import config
 from mortality_forecasting.models.single._parameters import RenshawHabermanParams, ParamSpecification
 
 
-class RenshawHabermanModel(SinglePopulationModel):
+class RenshawHabermanModel(Model):
     _PARAMS = RenshawHabermanParams()
 
     def __init__(
@@ -17,21 +17,20 @@ class RenshawHabermanModel(SinglePopulationModel):
             method: Literal["poisson", "negative_binomial"],
             num_initialization: Literal["naive", "SVD"] | ParameterContainer = "SVD",
             lee_miller_fix: bool = False,
-            model_type: Literal["M", "H1"] = "M",
             ftol: float = 1e-7,
+            model_type: Literal["M", "H1"] = "M",
             cohort_count_minimum: int = 5,
             verbose: bool = False
         ) -> None:
-        super().__init__(method=method, lee_miller_fix=lee_miller_fix)
+        super().__init__(
+            method=method, 
+            num_initialization=num_initialization,
+            lee_miller_fix=lee_miller_fix,
+            ftol=ftol,
+            verbose=verbose
+        ),
         self.model_type = model_type
-        self.num_initialization = num_initialization
-        self.ftol = ftol
         self.cohort_count_minimum = cohort_count_minimum
-        self.verbose = verbose
-
-    @property
-    def parameters_(self):
-        return self._parameters
 
     def _fit(self) -> None:
         method_map = {
@@ -217,11 +216,17 @@ class RenshawHabermanModel(SinglePopulationModel):
                 .clip(min=-10, max=10)
                 .sel(Cohort=gc.coords[config.COHORT_DIM])
             )
+            valid_cohorts_mask = gc.coords[config.COHORT_DIM].isin(valid_cohorts)
             # Constraint one
-            gc_candidate_mean = gc_candidate.mean(dim=config.COHORT_DIM)
-            gc_candidate = gc_candidate - gc_candidate_mean
-            gc_candidate = gc_candidate.where(
-                gc.coords[config.COHORT_DIM].isin(valid_cohorts), 0.0
+            gc_candidate_mean = ( # taking the mean of the non-zero values only
+                gc_candidate
+                .where(valid_cohorts_mask)
+                .mean(dim=config.COHORT_DIM, skipna=True)
+            )
+            gc_candidate = xr.where(
+                valid_cohorts_mask, 
+                gc_candidate - gc_candidate_mean,
+                0.0
             )
             ax_candidate = ax + bx2 * gc_candidate_mean
 
@@ -229,20 +234,21 @@ class RenshawHabermanModel(SinglePopulationModel):
             y_coords = gc_candidate.coords[config.COHORT_DIM]
             y_centered = y_coords - y_coords.mean()
             trend_slope = (
-                (gc_candidate * y_centered).sum(dim=config.COHORT_DIM) 
+                (gc_candidate * y_centered)
+                .where(valid_cohorts_mask)
+                .sum(dim=config.COHORT_DIM, skipna=True) 
                 / 
-                (y_centered ** 2).sum(dim=config.COHORT_DIM)
+                (y_centered ** 2)
+                .where(valid_cohorts_mask)
+                .sum(dim=config.COHORT_DIM, skipna=True)
             )
-            gc_candidate = gc_candidate - trend_slope * y_centered
-            gc_candidate_mean = gc_candidate.mean(dim=config.COHORT_DIM)
-            gc_candidate = gc_candidate - gc_candidate_mean
-            gc_candidate = gc_candidate.where(
-                gc.coords[config.COHORT_DIM].isin(valid_cohorts), 0.0
+            gc_candidate = xr.where(
+                valid_cohorts_mask,
+                gc_candidate - trend_slope * y_centered,
+                0.0
             )
-            ax_candidate = ax_candidate + bx2 * gc_candidate_mean
             ax = xr.where(slots_active_mask, ax_candidate, ax)
             gc = xr.where(slots_active_mask, gc_candidate, gc)
-            print((gc * y_centered).sum())
 
             D_pred = self._compute_deaths(ax, bx1, kt, bx2, gc)
             lambda_dispersion_candidate = self.family.update_dispersion(
@@ -274,7 +280,8 @@ class RenshawHabermanModel(SinglePopulationModel):
             slots_active_mask = likelihood_change > self.ftol
 
             if self.verbose:
-                print(f"iteration {iteration}: log-change: {likelihood_change}")
+                print("------------")
+                print(f"iteration {iteration}: log-change: \n {likelihood_change}")
 
         if iteration > config.MAXIMUM_LC_ITERATIONS:
             print(
@@ -300,7 +307,7 @@ class RenshawHabermanModel(SinglePopulationModel):
             self._PARAMS.BX1: bx1,
             self._PARAMS.KT: kt,
             self._PARAMS.BX2: bx2,
-            self._PARAMS.GC: gc
+            self._PARAMS.GC: gc.where(valid_cohorts_mask, np.nan)
         }
 
     def _predict_mortalities(
