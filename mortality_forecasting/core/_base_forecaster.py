@@ -1,14 +1,26 @@
 from abc import ABC, abstractmethod
+from typing import Literal
 
 import numpy as np
 import xarray as xr
 
 
 class Forecaster(ABC):
-    def __init__(self, seed: int | np.random.Generator | None = None) -> None:
-        self.seed = seed
+    def __init__(
+            self, 
+            seed: int | np.random.Generator | None = None,
+            simulations: int | None = None,
+            return_simulations: bool = False,
+            point_estimate: Literal["mean", "median"] = "median",
+            overlap: bool = False
+        ) -> None:
+        self.seed = self._normalize_seed(seed)
+        self.simulations = simulations
+        self.return_simulations = return_simulations
+        self.point_estimate = point_estimate
+        self.overlap = overlap
 
-    def _normalize_seed(self) -> np.random.Generator:
+    def _normalize_seed(self, seed: int | np.random.Generator | None) -> np.random.Generator:
         """Normalizes the entered seed into a single np.random.Generator instance
 
         Returns
@@ -16,14 +28,14 @@ class Forecaster(ABC):
         np.random.Generator
             An active NumPy random number generator instance.
         """
-        if isinstance(self.seed, np.random.Generator):
-            return self.seed
-        return np.random.default_rng(self.seed)
+        if isinstance(seed, np.random.Generator):
+            return seed
+        return np.random.default_rng(seed)
 
     @abstractmethod
     def fit(self, parameter_dataset: xr.Dataset) -> None:
         pass
 
     @abstractmethod
-    def forecast_parameters(self, steps: int, simulations: int) -> xr.Dataset:
+    def forecast_parameters(self, steps: int, alpha: float) -> xr.Dataset:
         pass

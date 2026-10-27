@@ -22,7 +22,6 @@ class DataFetcherHMD:
         
         self._data_parent_directory_path.mkdir(exist_ok=True)
 
-
     def is_country_code_valid(self) -> bool:
         """Checks whether the stored country code exists in the HMD's list of available countries.
 
@@ -53,7 +52,6 @@ class DataFetcherHMD:
 
         return True if data.get(self._country_code) else False
 
-
     def _fetch_valid_country_codes(self, path_to_cache) -> int:
         """Fetches the current list of valid HMD country codes and caches it locally as JSON.
 
@@ -79,7 +77,6 @@ class DataFetcherHMD:
 
         return response.status_code
 
-
     def fetch_country_data(self) -> dict[str, Path]:
         """Loads cached datasets or downloads data files for the stored country code from the HMD.
 
@@ -97,7 +94,7 @@ class DataFetcherHMD:
     
         failed_downloads = []
         successfully_loaded = {}
-        for key, file in config.FILE_SELECTION_COUNTRY_DATA.items():
+        for metric, file in config.FILE_SELECTION_COUNTRY_DATA.items():
             path_to_file = country_data_path / file
             
             if not path_to_file.exists() or \
@@ -111,11 +108,11 @@ class DataFetcherHMD:
                     if path_to_file.exists():
                         error_msg = f"WARNING: refresh failed for {file}, defaulting to cache." 
                         print(error_msg)
-                        successfully_loaded[key] = path_to_file
+                        successfully_loaded[metric] = path_to_file
                 else:
-                    successfully_loaded[key] = path_to_file
+                    successfully_loaded[metric] = path_to_file
             else:
-                successfully_loaded[key] = path_to_file
+                successfully_loaded[metric] = path_to_file
         if not any(country_data_path.iterdir()):
             country_data_path.rmdir()
 
@@ -127,7 +124,6 @@ class DataFetcherHMD:
                 print(f"{self._country_code:<10} {failed_file:>20}")
         
         return successfully_loaded
-
 
     def _ensure_credentials_present(self) -> None:
         """Checks if credentials are present in the .env file.
@@ -141,7 +137,6 @@ class DataFetcherHMD:
             )
             raise ValueError(missing_credentials_error)
 
-
     def _initialize_session(self) -> None:
         """Initializes and authenticates a network session with the Human Mortality Database.
 
@@ -153,7 +148,10 @@ class DataFetcherHMD:
         session = requests.Session() # Create a session so the web 'remembers' us
         login_url = "https://www.mortality.org/Account/Login"
         response = session.get(login_url, timeout=30)  
-        token_match = re.search(r'name="__RequestVerificationToken" type="hidden" value="([^"]+)"', response.text) # Look for verification token
+        token_match = re.search(
+            r'name="__RequestVerificationToken" type="hidden" value="([^"]+)"', 
+            response.text
+        ) # Look for verification token
         if not token_match:
             raise ConnectionError("Could not find security token.")
         session.post(login_url, data={ # Login into HMD's web
@@ -163,7 +161,6 @@ class DataFetcherHMD:
             "ReturnUrl": ""
         })
         self._session = session
-
 
     def _download_data(self, file: str, path_to_file: Path) -> bool:
         """Downloads a specific HMD file for the stored country code.
@@ -187,7 +184,6 @@ class DataFetcherHMD:
             path_to_file.write_text(data_response.text, encoding="utf-8")
 
         return download_error
-
 
     def _is_cache_expired(self, path_to_cache: Path, expiration_ttl_days) -> bool:
         """Checks whether a cached file is older than the allowed time-to-live.

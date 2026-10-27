@@ -21,9 +21,9 @@ class DualForecaster:
 
     def forecast_parameters(
             self, 
-            steps: int, 
-            simulations: int
+            steps: int,
+            alpha: float
         ) -> tuple[xr.Dataset, xr.Dataset]:
-        period_forecasted = self.period.forecast_parameters(steps, simulations)
-        cohort_forecasted = self.cohort.forecast_parameters(steps, simulations)
+        period_forecasted = self.period.forecast_parameters(steps, alpha)
+        cohort_forecasted = self.cohort.forecast_parameters(steps, alpha)
         return period_forecasted, cohort_forecasted

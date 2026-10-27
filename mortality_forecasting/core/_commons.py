@@ -1,35 +1,28 @@
 from dataclasses import dataclass, fields
-from typing import Iterator, Literal
+from typing import Iterator, Literal, Any
 from itertools import chain
-from functools import wraps
 
 import xarray as xr
 
 from mortality_forecasting import config
-from mortality_forecasting.core._base_glm import GLMCapable
 
 
 # This was moved here from model plotter in case anything else uses it
-def require_glm(target_attr=None):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(self, *args, **kwargs):
-            target = getattr(self, target_attr) if target_attr else self
-            
-            if not isinstance(target, GLMCapable):
-                attr_desc = f"self.{target_attr}" if target_attr else "self"
-                raise TypeError(
-                    f"'{func.__name__}' requires a GLM structure at {attr_desc}."
-                )
-            return func(self, *args, **kwargs)
-        return wrapper
-    return decorator
+def assert_glm(target: object) -> None:
+    method = getattr(
+        getattr(target, "model", target), "method", None
+    )
+
+    if method not in ("poisson", "negative_binomial"):
+        raise TypeError(
+            f"This operation requires a GLM-fitted model, but received '{method}'."
+        )
 
 def validate_value_column(value_column: str) -> None:
-    if value_column not in config.VALUE_COLUMNS:
+    if value_column not in config.SEX:
         raise ValueError(
             f"The selected value column '{value_column}' is unavailable, " \
-            f"try one of the following: {config.VALUE_COLUMNS}"
+            f"try one of the following: {config.SEX}"
         )
 
 def bounds_from_simulations(
@@ -39,20 +32,20 @@ def bounds_from_simulations(
     ) -> xr.DataArray:
 
     lower_da = da.quantile(
-        alpha / 2.,
+        alpha / 2.0,
         dim=config.SIMULATION_DIM
     ).drop_vars("quantile", errors="ignore")
     point_da = getattr(da, point_estimate)(
         dim=config.SIMULATION_DIM
     )
     upper_da = da.quantile(
-        1 - alpha / 2,
+        1 - alpha / 2.0,
         dim=config.SIMULATION_DIM
     ).drop_vars("quantile", errors="ignore")
     bounds_da = (
         xr.concat([lower_da, point_da, upper_da], dim=config.BOUND_DIM)
         .assign_coords({config.BOUND_DIM: ["lower", "point", "upper"]})
-        .transpose(config.YEAR_DIM, config.BOUND_DIM, ...)
+        .transpose(*config.DIM_ORDERING, missing_dims="ignore")
     )
     return bounds_da
 
@@ -94,43 +87,52 @@ class ParameterContainer:
 
         raise KeyError(f"Parameter '{parameter_selection}' not found.")
 
-    def _indexed_items(self) -> Iterator[tuple[str, xr.DataArray]]:
+    def get(
+            self, 
+            parameter_selection: str, 
+            default: Any = None
+        ) -> xr.DataArray | Any:
+        try:
+            return self[parameter_selection]
+        except KeyError:
+            return default
+
+    def _non_scalars(self) -> Iterator[tuple[str, xr.DataArray]]:
         """Gives only parameters that are not singular scalars"""
         for ds in self._datasets:
             for name in ds:
                 da = ds[name]
-                if da.ndim > 0:
+                if da.ndim > 0 and (
+                    config.YEAR_DIM in da.dims or 
+                    config.AGE_DIM in da.dims or 
+                    config.COHORT_DIM in da.dims
+                ):
                     yield name, da
-
-    # TODO: imo this is reduntant due to the data property being good enough
-    def info(self) -> None:
-        for field in fields(self):
-            ds = getattr(self, field.name)
-            print(f"{field.name} parameters:")
-            if ds is None:
-                print(f"{config.INFO_INDENT}empty")
-            else:
-                for parameter in ds:
-                    print(f"{config.INFO_INDENT}['{parameter}'] with {ds.coords}")
 
     @property
     def data(self) -> xr.Dataset:
-        return xr.merge(self._datasets)
+        return xr.merge(self._datasets).transpose(*config.DIM_ORDERING, missing_dims="ignore")
                 
 @dataclass
 class ForecastContainer:
     """A container class for forecasted parameters along with the mortality,
     rates, allowing the user and plotting devices to access the same 
     exact structure everywhere.
-
-    Parameters
-    ----------
-    static
-        Parameters which are not forecasted.
-    period
-        Forecasted period-like parameters.
-    cohort, optional
-        Forecastes cohort-like parameters, by default None.
     """
     mortality_rates_: xr.DataArray
     parameters_: ParameterContainer
+    in_sample_residuals_: xr.DataArray | None = None
+    attrs: dict | None = None
+
+    def __post_init__(self):
+        bound_dims = {
+            dim: self.mortality_rates_.coords[dim].values
+            for dim in self.mortality_rates_.dims
+            if dim not in (config.AGE_DIM, config.YEAR_DIM)
+        }
+
+        if isinstance(self.attrs, dict):
+            self.attrs["bound_dims"] = bound_dims
+        else:
+            self.attrs = {"bound_dims": bound_dims}
+        

@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from abc import ABC
-from typing import Any
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -13,35 +13,49 @@ class Plotter(ABC):
     def _validate_and_normalize_axs(
             self,
             axes_user_input: list[Axes] | Axes | None,
-            axs_needed: int = 1
-        ) -> list[Axes] | Axes:
+            axs_needed: int,
+            *settings: dict[str, Any]
+        ) -> list[Axes]:
+        self._validate_settings_length(axs_needed, *settings)
+
         if axes_user_input is not None and isinstance(axes_user_input, Sequence):
             if len(axes_user_input) != axs_needed:
                 raise ValueError(
-                    f"This plotting function needs {axs_needed} " \
+                    f"This plotting function needs {axs_needed} "
                     f"axs, while you provided only {len(axes_user_input)}."
                 )
-            axs = axes_user_input
+            axs = list(axes_user_input)
         elif isinstance(axes_user_input, Axes):
+            if axs_needed != 1:
+                raise ValueError(
+                    f"This plotting function needs {axs_needed} axes, "
+                    f"but a single Axes object was provided."
+                )
             axs = [axes_user_input]
         else:
             axs = [plt.subplots()[1] for _ in range(axs_needed)]
-        return axs[0] if axs_needed==1 else axs
+        return axs
 
-    def _validate_settings_length(self, axs_needed: int = 1, *settings) -> None:
-        if axs_needed == 1:
-            return
-
+    def _validate_settings_length(self, axs_needed: int, *settings) -> None:
         for setting in settings:
             if not setting:
                 continue
             for key, value in setting.items():
-                error_msg = f"Please provide {axs_needed} different values for '{key}'"
-                if isinstance(value, Sequence) and not isinstance(value, str):
-                    if len(value) != axs_needed:
-                        raise ValueError(error_msg)
-                else:
-                    raise ValueError(error_msg)
+                is_sequence = isinstance(value, Sequence) and not isinstance(value, str)
+                if is_sequence and len(value) != axs_needed:
+                    raise ValueError(
+                        f"Setting '{key}' has {len(value)} values, "
+                        f"but exactly {axs_needed} are required (or a single broadcasting value)."
+                    )
+
+    def _get_setting(self, settings: dict[str, Any], index: int) -> dict[str, Any]:
+        resolved = {}
+        for k, v in settings.items():
+            if isinstance(v, list):
+                resolved[k] = v[index]
+            else:
+                resolved[k] = v
+        return resolved
 
     def _plot_heatmap_from_matrix(
             self,
@@ -49,17 +63,21 @@ class Plotter(ABC):
             ax: Axes,
             ax_settings: dict[str, Any],
             colorbar_settings: dict[str, Any],
-            imshow_settings: dict[str, Any]
+            imshow_settings: dict[str, Any],
+            dimensions: Literal["age-year", "year-age"] = "age-year"
         ) -> Axes:
-        x_axis_ages = rates.coords[config.AGE_DIM].values
-        y_axis_years = rates.coords[config.YEAR_DIM].values
-
         imshow_defaults = {"origin": "lower", "cmap": "magma"}
+        if dimensions == "age-year":
+            x_axis = rates.coords[config.AGE_DIM].values
+            y_axis = rates.coords[config.YEAR_DIM].values
+        else:
+            x_axis = rates.coords[config.YEAR_DIM].values
+            y_axis = rates.coords[config.AGE_DIM].values
         ax.imshow(
-            rates.T,
+            rates,
             extent=[
-                x_axis_ages.min(), x_axis_ages.max(), 
-                y_axis_years.min(), y_axis_years.max()
+                x_axis.min(), x_axis.max(), 
+                y_axis.min(), y_axis.max()
             ], 
             **(imshow_defaults | imshow_settings)
         )
